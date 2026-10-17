@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Контакты</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="root"></div>
+  <!-- What the app is, for visitors who are not signed in and for Google's
+       review of the OAuth app. The page removes it after the sign-in. -->
+  <section id="about" class="about" lang="en">
+    <h2>An address book of your own</h2>
+    <p>Contacts is a private, invitation-only address book. Each user keeps their own contacts with every field of Apple Contacts and Google Contacts, the full history of changes of each card, groups, family relations, duplicate search and merge, and import and export of vCard files.</p>
+    <p>The address book syncs with the phones and computers of its owner: with iPhone, iPad, Mac, Thunderbird, Android and Outlook over CardDAV, and with Google Contacts.</p>
+    <p class="muted" lang="ru">«Контакты» — частная адресная книга по приглашению: все поля Контактов Apple и Google, история изменений, группы, родство, дубликаты, синхронизация с устройствами по CardDAV и с Google Контактами.</p>
+  </section>
+  <footer class="legal-foot"><a href="/privacy.html">Privacy Policy</a> · <a href="/terms.html">Terms of Service</a></footer>
+  <script src="/config.js"></script>
+  <script src="/i18n.js"></script>
+  <script src="/fields.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.15/dist/amazon-cognito-identity.min.js" integrity="sha384-tmLe+My/drouBT8LDBDX54/GtvpwceGWUwRKXHJfWra2DlJ/598zVtizduWyMqz5" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js" integrity="sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k" crossorigin="anonymous"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

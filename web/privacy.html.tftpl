@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Privacy Policy — Contacts</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="legal">
+    <p class="legal-nav"><a href="/">Contacts</a> · <a href="/terms.html">Terms of Service</a> · <a href="#ru">По-русски</a></p>
+
+    <h1>Privacy Policy</h1>
+    <p class="legal-date">Effective 17 October 2026</p>
+
+    <p>Contacts (<a href="https://${domain}">${domain}</a>) is a private address book run by its owner for themselves and the people they invite. Accounts are created only by the administrator; there is no public sign-up. Questions about this policy: <a href="mailto:${email}">${email}</a>.</p>
+
+    <h2>What is stored</h2>
+    <ul>
+      <li>Your account: email address and a password hash (Amazon Cognito).</li>
+      <li>Your address book: the cards you create, import or sync, with their photos, groups, relations, unsaved drafts and the full history of changes.</li>
+      <li>App passwords for CardDAV (stored only as hashes) and the names of the devices that use them.</li>
+      <li>If you connect Google Contacts: an OAuth refresh token, the link between each card and its Google contact, and a sync log.</li>
+      <li>If you connect iCloud Contacts: your Apple ID and an app-specific password, kept encrypted in AWS Systems Manager Parameter Store and used only to sync your contacts with iCloud, the link between each card and its iCloud card, and a sync log.</li>
+      <li>Technical logs of requests (no card contents), kept for 30 days.</li>
+    </ul>
+    <p>Everything is stored in Amazon Web Services in the Frankfurt region (eu-central-1), encrypted at rest. Each user sees only their own address book. Photos are served only to the signed-in owner with short-lived signed cookies.</p>
+
+    <h2>Google user data</h2>
+    <p>When you connect Google Contacts, the app asks for your email address and the <code>https://www.googleapis.com/auth/contacts</code> scope. It uses them only to keep your Google contacts and contact groups in sync with your own address book here, in both directions, on your request and every few minutes after that.</p>
+    <ul>
+      <li>Google data is used only to provide this sync to you. It is not sold, not shared with anyone, not used for advertising, and not used to train AI or machine learning models.</li>
+      <li>No person reads your Google data, except with your explicit permission for support, when required for security or by law.</li>
+      <li>The refresh token is kept encrypted in AWS Systems Manager Parameter Store and is used only by the sync.</li>
+    </ul>
+    <p>The use and transfer of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+
+    <h2>Sharing</h2>
+    <p>Data is not shared with third parties. It is processed only by the services that run the app: Amazon Web Services and, if you connect them, Google and Apple iCloud.</p>
+
+    <h2>Retention and deletion</h2>
+    <ul>
+      <li>Disconnecting Google in the app's settings revokes the token at Google and deletes it, the links between cards and Google contacts, and the sync state. Your cards here and your contacts in Google both stay. You can also remove access at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</li>
+      <li>A deleted card can be restored until you purge it; purging removes the card and its whole history.</li>
+      <li>The sync log is deleted after 90 days.</li>
+      <li>Disconnecting iCloud deletes the stored Apple ID and app-specific password, the links and the sync state; revoke the app-specific password at <a href="https://account.apple.com">account.apple.com</a>. Your cards here and in iCloud both stay.</li>
+      <li>When your account is deleted, the address book, its history, app passwords, photos and the Google and iCloud links are deleted. Backups and old photo versions expire within 35 days.</li>
+    </ul>
+    <p>To have your account and data deleted, write to <a href="mailto:${email}">${email}</a>.</p>
+
+    <h2>Cookies</h2>
+    <p>The app uses no tracking or advertising cookies. It keeps the sign-in session in your browser's storage and sets short-lived signed cookies only to show your photos.</p>
+
+    <h2>Changes</h2>
+    <p>Changes to this policy are published on this page with a new effective date.</p>
+
+    <hr>
+
+    <section id="ru" lang="ru">
+      <h1>Политика конфиденциальности</h1>
+      <p class="legal-date">Действует с 17 октября 2026 г.</p>
+      <p>«Контакты» (<a href="https://${domain}">${domain}</a>) — частная адресная книга, которую владелец ведёт для себя и приглашённых им людей. Учётные записи создаёт только администратор, открытой регистрации нет. Вопросы: <a href="mailto:${email}">${email}</a>.</p>
+      <h2>Что хранится</h2>
+      <p>Почта и хеш пароля учётной записи; ваши карточки с фото, группами, связями, черновиками и всей историей изменений; хеши паролей приложений CardDAV; при подключении Google — токен OAuth, связи карточек с контактами Google и журнал синхронизации; при подключении iCloud — Apple ID и пароль для приложения (зашифрованы, только для синхронизации), связи с карточками iCloud и журнал; технические журналы запросов без содержимого карточек — 30 дней. Всё хранится в AWS во Франкфурте (eu-central-1) в зашифрованном виде. Каждый пользователь видит только свою книгу.</p>
+      <h2>Данные Google</h2>
+      <p>Приложение запрашивает адрес почты и доступ <code>https://www.googleapis.com/auth/contacts</code> и использует их только для синхронизации ваших контактов и групп Google с вашей книгой. Данные Google не продаются, не передаются третьим лицам, не используются для рекламы и обучения моделей ИИ. Использование данных, полученных через API Google, соответствует <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, включая требования Limited Use.</p>
+      <h2>Хранение и удаление</h2>
+      <p>Отключение Google в настройках отзывает и удаляет токен, связи и состояние синхронизации; карточки здесь и контакты в Google остаются. Журнал синхронизации удаляется через 90 дней. При удалении учётной записи удаляются книга, история, пароли приложений, фото и связь с Google; резервные копии и старые версии фото исчезают в течение 35 дней. Чтобы удалить учётную запись, напишите на <a href="mailto:${email}">${email}</a>.</p>
+      <h2>Cookie</h2>
+      <p>Рекламных и отслеживающих cookie нет; короткоживущие подписанные cookie нужны только для показа ваших фото.</p>
+    </section>
+  </main>
+</body>
+</html>

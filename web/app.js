@@ -1415,6 +1415,7 @@
     // do not give it, and ⌘V / Ctrl+V in the editor works there too.
     async function pastePhoto() {
       let found = null;
+      let other = false;
       try {
         for (const item of await navigator.clipboard.read()) {
           const type = item.types.find((kind) => kind.startsWith("image/"));
@@ -1422,13 +1423,19 @@
             found = new File([await item.getType(type)], "clipboard." + type.split("/")[1], { type });
             break;
           }
+          other = other || item.types.length > 0;
         }
       } catch (error) {
-        toast(t("photo.pasteKeys"));
+        // Access refused, or not given: the browser lets only a paste of the
+        // user's own read the clipboard then.
+        console.warn("clipboard", error);
+        toast(t(error && error.name === "NotAllowedError" ? "photo.pasteDenied" : "photo.pasteKeys"));
         return;
       }
       if (found) takePhoto(found);
-      else toast(t("photo.noImage"));
+      // A file copied in Finder or Explorer reaches a page only as its name;
+      // ⌘V / Ctrl+V gives the file itself.
+      else toast(t(other ? "photo.pasteFile" : "photo.noImage"));
     }
 
     function drawPhoto() {

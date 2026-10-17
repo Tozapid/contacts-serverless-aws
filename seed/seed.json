@@ -1,0 +1,330 @@
+{
+  "contacts": [
+    {
+      "key": "margaret",
+      "created_minutes_ago": 129600,
+      "card": {
+        "first": "Margaret",
+        "last": "Walker",
+        "maiden": "Thompson",
+        "nickname": "Maggie",
+        "phones": [
+          {"label": "mobile", "value": "+44 7700 900123"},
+          {"label": "home", "value": "+44 20 7946 0018"}
+        ],
+        "emails": [{"label": "home", "value": "margaret.walker@example.com"}],
+        "addresses": [
+          {"label": "home", "street": "14 Rosemary Lane", "city": "Oxford", "postal_code": "OX1 2AB", "country": "United Kingdom", "country_code": "gb"}
+        ],
+        "birthday": "1958-04-12",
+        "dates": [{"label": "anniversary", "value": "1982-06-19"}],
+        "notes": "Prefers a call to a text. Allergic to lilies.",
+        "starred": true
+      },
+      "versions": [
+        {"minutes_ago": 43200, "set": {"phones": [{"label": "mobile", "value": "+44 7700 900123"}, {"label": "home", "value": "+44 20 7946 0018"}]}},
+        {"minutes_ago": 2880, "set": {"notes": "Prefers a call to a text. Allergic to lilies."}}
+      ],
+      "first_version": {"phones": [{"label": "mobile", "value": "+44 7700 900111"}], "notes": "Prefers a call to a text."}
+    },
+    {
+      "key": "robert",
+      "created_minutes_ago": 129600,
+      "card": {
+        "first": "Robert",
+        "last": "Walker",
+        "suffix": "Sr.",
+        "phones": [{"label": "mobile", "value": "+44 7700 900456"}],
+        "emails": [{"label": "home", "value": "rob.walker@example.com"}],
+        "addresses": [
+          {"label": "home", "street": "14 Rosemary Lane", "city": "Oxford", "postal_code": "OX1 2AB", "country": "United Kingdom", "country_code": "gb"}
+        ],
+        "birthday": "1955-11-03",
+        "dates": [{"label": "anniversary", "value": "1982-06-19"}],
+        "related": [{"label": "spouse", "to": "margaret"}],
+        "notes": "Retired architect. Plays chess on Thursdays."
+      }
+    },
+    {
+      "key": "emily",
+      "created_minutes_ago": 120000,
+      "card": {
+        "first": "Emily",
+        "last": "Carter",
+        "maiden": "Walker",
+        "pronouns": "she/her",
+        "phones": [{"label": "mobile", "value": "+44 7700 900789"}],
+        "emails": [
+          {"label": "home", "value": "emily.carter@example.com"},
+          {"label": "work", "value": "e.carter@brightpath.example"}
+        ],
+        "company": "BrightPath Health",
+        "title": "Paediatric Nurse",
+        "birthday": "--09-21",
+        "related": [{"label": "mother", "to": "margaret"}, {"label": "father", "to": "robert"}, {"label": "spouse", "value": "James Carter"}],
+        "social": [{"service": "Instagram", "user": "emily.c"}],
+        "im": [{"service": "Telegram", "label": "home", "value": "@emilycarter"}],
+        "starred": true
+      },
+      "versions": [
+        {"minutes_ago": 7200, "set": {"company": "BrightPath Health", "title": "Paediatric Nurse"}}
+      ],
+      "first_version": {"company": "St Mary's Hospital", "title": "Nurse"}
+    },
+    {
+      "key": "daniel",
+      "created_minutes_ago": 118000,
+      "card": {
+        "first": "Daniel",
+        "last": "Walker",
+        "nickname": "Danny",
+        "phones": [{"label": "mobile", "value": "+1 415 555 0142"}],
+        "emails": [{"label": "home", "value": "danny.walker@example.com"}],
+        "addresses": [
+          {"label": "home", "street": "2280 Mission Street, Apt 4", "city": "San Francisco", "region": "CA", "postal_code": "94110", "country": "United States", "country_code": "us"}
+        ],
+        "birthday": "1987-02-28",
+        "related": [{"label": "mother", "to": "margaret"}, {"label": "father", "to": "robert"}, {"label": "sister", "to": "emily"}],
+        "urls": [{"label": "homepage", "value": "https://danny.example.com"}],
+        "notes": "Eight hours behind London."
+      }
+    },
+    {
+      "key": "olivia",
+      "created_minutes_ago": 90000,
+      "card": {
+        "first": "Olivia",
+        "last": "Bennett",
+        "phonetic_last": "BEN-it",
+        "company": "Northwind Traders",
+        "department": "Engineering",
+        "title": "Head of Platform",
+        "phones": [
+          {"label": "work", "value": "+44 20 7946 0321"},
+          {"label": "mobile", "value": "+44 7700 900321"}
+        ],
+        "emails": [{"label": "work", "value": "olivia.bennett@northwind.example"}],
+        "addresses": [
+          {"label": "work", "street": "1 Canada Square, Floor 22", "city": "London", "postal_code": "E14 5AB", "country": "United Kingdom", "country_code": "gb"}
+        ],
+        "social": [{"service": "LinkedIn", "user": "olivia-bennett"}],
+        "custom": [{"label": "Assistant", "value": "Priya, ext. 2214"}],
+        "starred": true
+      }
+    },
+    {
+      "key": "marcus",
+      "created_minutes_ago": 88000,
+      "card": {
+        "first": "Marcus",
+        "last": "Chen",
+        "company": "Northwind Traders",
+        "department": "Engineering",
+        "title": "Senior Developer",
+        "phones": [{"label": "work", "value": "+44 20 7946 0388"}],
+        "emails": [{"label": "work", "value": "marcus.chen@northwind.example"}],
+        "im": [{"service": "Skype", "label": "work", "value": "marcus.chen.nw"}],
+        "birthday": "1991-07-15",
+        "notes": "Knows everything about the billing service."
+      }
+    },
+    {
+      "key": "sofia",
+      "created_minutes_ago": 86000,
+      "card": {
+        "first": "Sofia",
+        "last": "Rossi",
+        "company": "Northwind Traders",
+        "department": "Design",
+        "title": "Product Designer",
+        "phones": [{"label": "mobile", "value": "+39 333 555 0187"}],
+        "emails": [{"label": "work", "value": "sofia.rossi@northwind.example"}],
+        "addresses": [
+          {"label": "work", "street": "Via Torino 51", "city": "Milan", "postal_code": "20123", "country": "Italy", "country_code": "it"}
+        ],
+        "urls": [{"label": "homepage", "value": "https://sofiarossi.example.com"}],
+        "social": [{"service": "Twitter", "user": "sofiadesigns"}]
+      }
+    },
+    {
+      "key": "aisha",
+      "created_minutes_ago": 60000,
+      "card": {
+        "first": "Aisha",
+        "last": "Okafor",
+        "phonetic_first": "eye-EE-sha",
+        "phones": [{"label": "mobile", "value": "+44 7700 900654"}],
+        "emails": [{"label": "home", "value": "aisha.okafor@example.com"}],
+        "birthday": "1990-05-04",
+        "related": [{"label": "friend", "value": "Book club"}],
+        "notes": "Met at the Oxford book club. Recommends sci-fi."
+      }
+    },
+    {
+      "key": "tom",
+      "created_minutes_ago": 58000,
+      "card": {
+        "first": "Thomas",
+        "last": "Hughes",
+        "nickname": "Tom",
+        "phones": [{"label": "mobile", "value": "+44 7700 900987"}],
+        "emails": [{"label": "home", "value": "tom.hughes@example.com"}],
+        "hidden_birthday": "1989-12-24",
+        "notes": "Does not celebrate his birthday — no reminders, but keep the date."
+      }
+    },
+    {
+      "key": "lucas",
+      "created_minutes_ago": 50000,
+      "card": {
+        "first": "Lucas",
+        "last": "Martin",
+        "phones": [{"label": "mobile", "value": "+33 6 12 34 56 78"}],
+        "emails": [{"label": "home", "value": "lucas.martin@example.fr"}],
+        "addresses": [
+          {"label": "home", "street": "8 Rue des Martyrs", "city": "Paris", "postal_code": "75009", "country": "France", "country_code": "fr"}
+        ],
+        "birthday": "1992-03-30",
+        "im": [{"service": "WhatsApp", "label": "mobile", "value": "+33 6 12 34 56 78"}]
+      }
+    },
+    {
+      "key": "hannah",
+      "created_minutes_ago": 30000,
+      "card": {
+        "first": "Hannah",
+        "last": "Schmidt",
+        "phones": [{"label": "mobile", "value": "+49 151 2345 6789"}],
+        "emails": [{"label": "home", "value": "hannah.schmidt@example.de"}],
+        "addresses": [
+          {"label": "home", "street": "Kastanienallee 12", "city": "Berlin", "postal_code": "10435", "country": "Germany", "country_code": "de"}
+        ],
+        "birthday": "--10-25"
+      }
+    },
+    {
+      "key": "dentist",
+      "created_minutes_ago": 100000,
+      "card": {
+        "company": "Riverside Dental Clinic",
+        "phones": [{"label": "work", "value": "+44 1865 555 010"}],
+        "emails": [{"label": "work", "value": "appointments@riverside-dental.example"}],
+        "addresses": [
+          {"label": "work", "street": "22 High Street", "city": "Oxford", "postal_code": "OX1 4AH", "country": "United Kingdom", "country_code": "gb"}
+        ],
+        "urls": [{"label": "homepage", "value": "https://riverside-dental.example"}],
+        "custom": [{"label": "Opening hours", "value": "Mon–Fri 8:00–18:00"}],
+        "notes": "Dr. Patel. Check-up every six months."
+      }
+    },
+    {
+      "key": "plumber",
+      "created_minutes_ago": 40000,
+      "card": {
+        "first": "Kevin",
+        "last": "O'Brien",
+        "company": "O'Brien Plumbing",
+        "title": "Plumber",
+        "phones": [{"label": "work", "value": "+44 7700 900246"}],
+        "notes": "Fixed the boiler in March. Cash or bank transfer."
+      }
+    },
+    {
+      "key": "newsletter",
+      "created_minutes_ago": 20000,
+      "card": {
+        "emails": [{"label": "work", "value": "hello@oxfordbookclub.example"}]
+      }
+    },
+    {
+      "key": "jon",
+      "created_minutes_ago": 25000,
+      "card": {
+        "first": "Jon",
+        "last": "Smith",
+        "phones": [{"label": "mobile", "value": "+44 7700 900555"}],
+        "company": "Smith & Co"
+      }
+    },
+    {
+      "key": "jonathan",
+      "created_minutes_ago": 3000,
+      "card": {
+        "first": "Jonathan",
+        "last": "Smith",
+        "phones": [{"label": "mobile", "value": "07700 900555"}],
+        "emails": [{"label": "work", "value": "jonathan@smithandco.example"}],
+        "title": "Accountant",
+        "notes": "Imported from the phone; probably the same as Jon Smith."
+      }
+    },
+    {
+      "key": "grace",
+      "created_minutes_ago": 15000,
+      "card": {
+        "prefix": "Dr.",
+        "first": "Grace",
+        "middle": "Eleanor",
+        "last": "Lee",
+        "company": "Oxford Family Practice",
+        "title": "General Practitioner",
+        "phones": [{"label": "work", "value": "+44 1865 555 020"}],
+        "emails": [{"label": "work", "value": "reception@oxfordfamily.example"}],
+        "file_as": "Lee, Dr. Grace"
+      }
+    },
+    {
+      "key": "noah",
+      "created_minutes_ago": 9000,
+      "card": {
+        "first": "Noah",
+        "last": "Fischer",
+        "phones": [{"label": "mobile", "value": "+41 79 555 01 23"}],
+        "emails": [{"label": "home", "value": "noah.fischer@example.ch"}],
+        "birthday": "1985-08-08"
+      },
+      "deleted_minutes_ago": 600
+    },
+    {
+      "key": "chloe",
+      "created_minutes_ago": 400,
+      "card": {
+        "first": "Chloe",
+        "last": "Dubois",
+        "phones": [{"label": "mobile", "value": "+33 7 98 76 54 32"}],
+        "emails": [{"label": "home", "value": "chloe.dubois@example.fr"}],
+        "related": [{"label": "friend", "to": "lucas"}],
+        "notes": "Added from Android."
+      }
+    }
+  ],
+  "groups": [
+    {"name": "Family", "members": ["margaret", "robert", "emily", "daniel"]},
+    {"name": "Work", "members": ["olivia", "marcus", "sofia"]},
+    {"name": "Friends", "members": ["aisha", "tom", "lucas", "hannah", "chloe"]},
+    {"name": "Book club", "members": ["aisha", "newsletter"]},
+    {"name": "Services", "members": ["dentist", "plumber", "grace"]}
+  ],
+  "app_passwords": [
+    {"name": "iPhone", "created_minutes_ago": 100000, "used_minutes_ago": 12},
+    {"name": "MacBook", "created_minutes_ago": 90000, "used_minutes_ago": 95},
+    {"name": "Thunderbird", "created_minutes_ago": 30000}
+  ],
+  "sync_log": [
+    {"minutes_ago": 2000, "source": "google", "action": "connected", "detail": "demo.contacts@gmail.com"},
+    {"minutes_ago": 1990, "source": "google", "action": "matched", "contact": "margaret", "fields": ["emails"]},
+    {"minutes_ago": 1990, "source": "to_google", "action": "created", "contact": "daniel", "target": "google"},
+    {"minutes_ago": 1500, "source": "icloud", "action": "connected", "detail": "demo.contacts@icloud.com"},
+    {"minutes_ago": 1495, "source": "icloud", "action": "matched", "contact": "olivia"},
+    {"minutes_ago": 1495, "source": "to_icloud", "action": "group_created", "name": "Family", "target": "icloud"},
+    {"minutes_ago": 7200, "source": "dav:iPhone", "action": "changed", "contact": "emily", "fields": ["company", "title"]},
+    {"minutes_ago": 900, "source": "google", "action": "changed", "contact": "marcus", "fields": ["phones"]},
+    {"minutes_ago": 600, "source": "icloud", "action": "deleted", "contact": "noah", "detail": "restorable"},
+    {"minutes_ago": 400, "source": "google", "action": "created", "contact": "chloe"},
+    {"minutes_ago": 380, "source": "to_icloud", "action": "created", "contact": "chloe", "target": "icloud"},
+    {"minutes_ago": 95, "source": "dav:MacBook", "action": "group_members", "name": "Friends"},
+    {"minutes_ago": 40, "source": "google", "action": "conflict", "contact": "sofia", "fields": ["title"], "detail": "kept_book"},
+    {"minutes_ago": 39, "source": "to_google", "action": "changed", "contact": "sofia", "target": "google"},
+    {"minutes_ago": 12, "source": "dav:iPhone", "action": "changed", "contact": "tom", "fields": ["notes"]}
+  ]
+}

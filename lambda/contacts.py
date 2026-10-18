@@ -50,6 +50,7 @@ _table = None
 _dynamodb = None
 _s3 = None
 _cognito = None
+_ses = None
 _signing_key = None
 
 TEXT_FIELDS = {
@@ -594,6 +595,111 @@ def sync_log(owner, cursor=None):
         "items": [{key: plain(item[key]) for key in keys if key in item} for item in page.get("Items", [])],
         "next_cursor": encode_cursor(page.get("LastEvaluatedKey")),
     }
+
+
+# Sync alerts -----------------------------------------------------------------------
+# A sync with Google or iCloud that fails tells its user by mail through SES,
+# from SENDER (empty turns the mails off). One mail per run of failures: at
+# once when the service wants the user to sign in again (status "reauth"),
+# which no later sync mends, and after SYNC_ALERT_FAILURES failures in a row
+# for any other error, so that a blip of the service that the next sync gets
+# past stays quiet. The state of the sync (sk = GOOGLE or ICLOUD) counts the
+# failures and keeps "alerted"; a sync that works resets both. The mail is in
+# the language the user picked on the page (the Cognito attribute "locale"),
+# else in English.
+
+SERVICE_NAMES = {"google": "Google", "icloud": "iCloud"}
+ALERT_TEXT = {
+    "en": {
+        "sender": "Contacts",
+        "subject": "The sync with {name} does not work",
+        "reauth": "{name} no longer accepts the sign-in of the address book. The sync is stopped until you connect {name} again.",
+        "error": "Several syncs with {name} in a row ended with an error. The sync keeps trying on schedule.",
+        "detail": "Error: {error}",
+        "settings": "Settings → Sync: {site}",
+    },
+    "ru": {
+        "sender": "Контакты",
+        "subject": "Синхронизация с {name} не работает",
+        "reauth": "{name} больше не принимает вход адресной книги. Синхронизация остановлена, пока вы не подключите {name} заново.",
+        "error": "Несколько синхронизаций с {name} подряд закончились ошибкой. Синхронизация будет пробовать снова по расписанию.",
+        "detail": "Ошибка: {error}",
+        "settings": "Настройки → Синхронизация: {site}",
+    },
+    "fr": {
+        "sender": "Contacts",
+        "subject": "La synchronisation avec {name} ne fonctionne pas",
+        "reauth": "{name} n’accepte plus la connexion du carnet d’adresses. La synchronisation est arrêtée jusqu’à ce que vous reconnectiez {name}.",
+        "error": "Plusieurs synchronisations avec {name} d’affilée se sont terminées par une erreur. La synchronisation réessaie selon le calendrier.",
+        "detail": "Erreur : {error}",
+        "settings": "Réglages → Synchronisation : {site}",
+    },
+    "it": {
+        "sender": "Contatti",
+        "subject": "La sincronizzazione con {name} non funziona",
+        "reauth": "{name} non accetta più l’accesso della rubrica. La sincronizzazione è ferma finché non ricolleghi {name}.",
+        "error": "Diverse sincronizzazioni di fila con {name} sono terminate con un errore. La sincronizzazione riprova secondo la pianificazione.",
+        "detail": "Errore: {error}",
+        "settings": "Impostazioni → Sincronizzazione: {site}",
+    },
+}
+ALERT_LANGUAGE = "en"
+
+
+def sync_ok_state():
+    return {"failures": 0, "alerted": False}
+
+
+def sync_failed_state(owner, service, state, status, error):
+    """The fields a failed sync adds to its state; sends the mail when it is due."""
+    failures = as_int(state.get("failures")) + 1
+    changes = {"failures": failures}
+    due = status == "reauth" or failures >= as_int(os.environ.get("SYNC_ALERT_FAILURES"), 3)
+    if due and not state.get("alerted") and send_sync_alert(owner, service, status, error):
+        changes["alerted"] = True
+    return changes
+
+
+def user_language(owner):
+    """The language the user picked on the page; English when there is none
+    or it cannot be read."""
+    try:
+        user = cognito().admin_get_user(UserPoolId=env("USER_POOL_ID"), Username=owner)
+    except Exception:
+        logger.warning("language of %s not read", owner, exc_info=True)
+        return ALERT_LANGUAGE
+    locale = next((item.get("Value", "") for item in user.get("UserAttributes") or [] if item.get("Name") == "locale"), "")
+    code = locale[:2].lower()
+    return code if code in ALERT_TEXT else ALERT_LANGUAGE
+
+
+def send_sync_alert(owner, service, status, error):
+    sender = os.environ.get("SENDER", "")
+    if not sender:
+        return False
+    words = ALERT_TEXT[user_language(owner)]
+    name = SERVICE_NAMES.get(service, service)
+    site = os.environ.get("SITE_URL", "").rstrip("/")
+    text = "\n\n".join([
+        words["reauth" if status == "reauth" else "error"].format(name=name),
+        words["detail"].format(error=error),
+        words["settings"].format(site=site),
+    ])
+    try:
+        ses().send_email(
+            FromEmailAddress=f"{words['sender']} <{sender}>",
+            Destination={"ToAddresses": [owner]},
+            Content={"Simple": {
+                "Subject": {"Data": words["subject"].format(name=name), "Charset": "UTF-8"},
+                "Body": {"Text": {"Data": text + "\n", "Charset": "UTF-8"}},
+            }},
+        )
+    except Exception:
+        # In the SES sandbox an address that is not verified is refused; the
+        # sync goes on, and the next failure tries again.
+        logger.exception("sync alert to %s not sent", owner)
+        return False
+    return True
 
 
 # App passwords ---------------------------------------------------------------------
@@ -1884,6 +1990,14 @@ def dynamodb():
         import boto3
         _dynamodb = boto3.client("dynamodb")
     return _dynamodb
+
+
+def ses():
+    global _ses
+    if _ses is None:
+        import boto3
+        _ses = boto3.client("sesv2")
+    return _ses
 
 
 def cognito():

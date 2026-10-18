@@ -16,6 +16,9 @@ locals {
   google = var.google_client_id != ""
   icloud = var.icloud_enabled
   reset  = var.reset_schedule != ""
+  # Mails to a user whose sync with Google or iCloud fails (ses.tf), from
+  # sender_address on domain_name. The demo runs no sync and sends nothing.
+  alerts = !var.demo && var.sender_address != ""
 
   # The version of this deployment: the newest entry of CHANGELOG.md.
   version = regex("(?m)^## (v[0-9]+\\.[0-9]+\\.[0-9]+)(?:\\s|$)", file("${path.module}/CHANGELOG.md"))[0]

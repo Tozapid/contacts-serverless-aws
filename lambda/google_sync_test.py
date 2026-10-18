@@ -142,13 +142,21 @@ class GoogleSyncTest(unittest.TestCase):
         contacts._table = self.table
         contacts._dynamodb = fakes.FakeDynamo(self.table)
         contacts._s3 = self.s3
+        self.ses = fakes.FakeSes()
+        contacts._ses = self.ses
+        self.locale = {}
+        self.cognito = fakes.FakeCognito()
+        self.cognito.admin_get_user = lambda UserPoolId, Username: {
+            "Username": Username, "UserAttributes": [{"Name": "locale", "Value": self.locale[Username]}] if Username in self.locale else []}
+        contacts._cognito = self.cognito
         google_sync._ssm = self.ssm
         google_sync._secret = None
         google_sync.request = self.people.request
         google_sync.access_token = lambda owner: "token"
         os.environ.update({"TABLE_NAME": "contacts", "PHOTOS_BUCKET": "photos", "GOOGLE_CLIENT_ID": "client",
                            "GOOGLE_SECRET_PARAMETER": "/secret", "SITE_URL": "https://contacts.example.com",
-                           "UID_DOMAIN": "contacts.example.com", "GOOGLE_TOKEN_PREFIX": "/contacts/google"})
+                           "UID_DOMAIN": "contacts.example.com", "GOOGLE_TOKEN_PREFIX": "/contacts/google",
+                           "SENDER": "contacts@example.com", "SYNC_ALERT_FAILURES": "3", "USER_POOL_ID": "pool"})
         os.environ.pop("GOOGLE_SYNC_FUNCTION", None)
         google_sync.save_state(OWNER, {"connected": True, "email": "me@gmail.com"})
         self.table.put_item(Item={"pk": "GOOGLE", "sk": OWNER})
@@ -321,6 +329,58 @@ class GoogleSyncTest(unittest.TestCase):
         google_sync.save_state(OWNER, {"lock_until": 0})
         self.assertIsInstance(google_sync.sync_user(OWNER), dict)
         self.assertEqual(google_sync.public_state(OWNER)["status"], "ok")
+
+    def test_error_alerts(self):
+        def fail(*args, **kwargs):
+            raise google_sync.GoogleError(503, {"error": {"status": "UNAVAILABLE"}})
+        working = google_sync.request
+        google_sync.request = fail
+        for _ in range(2):
+            self.assertEqual(google_sync.sync_user(OWNER), "error")
+        self.assertEqual(self.ses.sent, [])
+        for _ in range(2):
+            self.assertEqual(google_sync.sync_user(OWNER), "error")
+        self.assertEqual(len(self.ses.sent), 1)
+        # No language picked on the page: English.
+        self.assertEqual((self.ses.sent[0]["to"], self.ses.sent[0]["from"]), ([OWNER], "Contacts <contacts@example.com>"))
+        self.assertEqual(self.ses.sent[0]["subject"], "The sync with Google does not work")
+        self.assertIn("UNAVAILABLE", self.ses.sent[0]["text"])
+        google_sync.request = working
+        self.sync()
+        self.assertEqual(google_sync.state_item(OWNER)["failures"], 0)
+        # The sign-in is gone: a mail at once, and only one, in the language
+        # of the page.
+        self.locale[OWNER] = "ru"
+        google_sync.request = lambda *args, **kwargs: (_ for _ in ()).throw(google_sync.GoogleError(400, {"error": "invalid_grant"}))
+        google_sync.sync_user(OWNER)
+        google_sync.sync_user(OWNER)
+        self.assertEqual(google_sync.public_state(OWNER)["status"], "reauth")
+        self.assertEqual(len(self.ses.sent), 2)
+        self.assertEqual(self.ses.sent[1]["subject"], "Синхронизация с Google не работает")
+        self.assertIn("заново", self.ses.sent[1]["text"])
+
+    def test_alert_language(self):
+        for locale, subject in (("fr", "La synchronisation avec Google ne fonctionne pas"), ("it-IT", "La sincronizzazione con Google non funziona"),
+                                ("de", "The sync with Google does not work")):
+            self.locale[OWNER] = locale
+            contacts.send_sync_alert(OWNER, "google", "error", "500")
+            self.assertEqual(self.ses.sent[-1]["subject"], subject)
+        def fail(UserPoolId, Username):
+            raise fakes.ClientError("UserNotFoundException")
+        self.cognito.admin_get_user = fail
+        contacts.send_sync_alert(OWNER, "google", "reauth", "401")
+        self.assertEqual(self.ses.sent[-1]["subject"], "The sync with Google does not work")
+
+    def test_alert_not_sent_is_tried_again(self):
+        def refuse(**kwargs):
+            raise fakes.ClientError("MessageRejected")
+        self.ses.send_email = refuse
+        google_sync.request = lambda *args, **kwargs: (_ for _ in ()).throw(google_sync.GoogleError(400, {"error": "invalid_grant"}))
+        google_sync.sync_user(OWNER)
+        self.assertFalse(google_sync.state_item(OWNER).get("alerted"))
+        del self.ses.send_email
+        google_sync.sync_user(OWNER)
+        self.assertEqual(len(self.ses.sent), 1)
 
     def test_sign_in_flow(self):
         start = google_sync.start(OWNER)["url"]

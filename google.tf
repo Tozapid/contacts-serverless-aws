@@ -17,7 +17,7 @@ resource "aws_cloudwatch_log_group" "google" {
 resource "aws_lambda_function" "google" {
   #checkov:skip=CKV_AWS_50:X-Ray is disabled to avoid extra cost on a low-traffic app.
   #checkov:skip=CKV_AWS_115:Reserved concurrency is left to the account pool.
-  #checkov:skip=CKV_AWS_116:A failed sync is written to the sync log; the next one comes on schedule.
+  #checkov:skip=CKV_AWS_116:A failed sync is written to the sync log and mailed to its user; the next one comes on schedule.
   #checkov:skip=CKV_AWS_117:The function calls the People API of Google and public AWS endpoints.
   #checkov:skip=CKV_AWS_173:Environment values are names and the public OAuth client id, not secrets.
   #checkov:skip=CKV_AWS_272:Code signing is not used for this internal function.
@@ -47,6 +47,8 @@ resource "aws_lambda_function" "google" {
       GOOGLE_SECRET_PARAMETER = local.google_secret_parameter
       GOOGLE_TOKEN_PREFIX     = local.google_token_prefix
       GOOGLE_SYNC_FUNCTION    = local.google_function
+      SENDER                  = local.alerts ? var.sender_address : ""
+      SYNC_ALERT_FAILURES     = tostring(var.sync_alert_failures)
     }
   }
 
@@ -56,6 +58,13 @@ resource "aws_lambda_function" "google" {
   }
 
   depends_on = [aws_iam_role_policy.lambda]
+
+  lifecycle {
+    precondition {
+      condition     = !local.alerts || (local.custom_domain && endswith(var.sender_address, "@${var.domain_name}"))
+      error_message = "sender_address has to be on domain_name, which the stack makes an SES identity."
+    }
+  }
 }
 
 # A sync is not retried: the next one comes on schedule.

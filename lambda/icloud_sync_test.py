@@ -29,11 +29,14 @@ class ICloudSyncTest(unittest.TestCase):
         contacts._dynamodb = fakes.FakeDynamo(self.table)
         contacts._s3 = self.s3
         contacts._cognito = self.cognito
+        self.ses = fakes.FakeSes()
+        contacts._ses = self.ses
         icloud_sync._ssm = self.ssm
         carddav._auth.clear()
         carddav.SETTLE_SECONDS = 0
         os.environ.update({"TABLE_NAME": "contacts", "PHOTOS_BUCKET": "photos", "USER_POOL_ID": "pool",
-                           "UID_DOMAIN": "contacts.example.com", "ICLOUD_PASSWORD_PREFIX": "/contacts/icloud"})
+                           "UID_DOMAIN": "contacts.example.com", "ICLOUD_PASSWORD_PREFIX": "/contacts/icloud",
+                           "SITE_URL": "https://contacts.example.com", "SENDER": "contacts@example.com"})
         os.environ.pop("ICLOUD_SYNC_FUNCTION", None)
         self.password = contacts.create_app_password(APPLE_ID, {"name": "iCloud"})["password"]
         self.requests = []
@@ -241,6 +244,11 @@ class ICloudSyncTest(unittest.TestCase):
         carddav._auth.clear()
         self.assertEqual(icloud_sync.sync_user(OWNER), "error")
         self.assertEqual(icloud_sync.public_state(OWNER)["status"], "reauth")
+        self.assertEqual(len(self.ses.sent), 1)
+        self.assertEqual((self.ses.sent[0]["to"], self.ses.sent[0]["from"]), ([OWNER], "Contacts <contacts@example.com>"))
+        self.assertIn("iCloud", self.ses.sent[0]["subject"])
+        icloud_sync.sync_user(OWNER)
+        self.assertEqual(len(self.ses.sent), 1)
 
     def test_api_routes(self):
         def call(method, path, body=None):

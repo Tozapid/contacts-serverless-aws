@@ -160,6 +160,16 @@ class FakeS3:
         return f"https://{Params['Bucket']}.s3.amazonaws.com/{Params['Key']}?signed"
 
 
+class FakeSes:
+    def __init__(self):
+        self.sent = []
+
+    def send_email(self, FromEmailAddress, Destination, Content):
+        self.sent.append({"from": FromEmailAddress, "to": Destination["ToAddresses"],
+                          "subject": Content["Simple"]["Subject"]["Data"], "text": Content["Simple"]["Body"]["Text"]["Data"]})
+        return {"MessageId": str(len(self.sent))}
+
+
 class Pager:
     def __init__(self, fn):
         self.fn = fn

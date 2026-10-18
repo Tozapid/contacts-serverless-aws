@@ -216,6 +216,7 @@ def callback(params):
         drop_links(owner)
     save_state(owner, {
         "connected": True, "email": email, "status": "connected", "last_error": "",
+        **contacts.sync_ok_state(),
         **({"sync_token": "", "groups": {}} if fresh or not previous else {}),
     })
     contacts.table().put_item(Item={"pk": "GOOGLE", "sk": owner, "at": contacts.now_iso()})
@@ -575,17 +576,20 @@ def sync_user(owner):
     try:
         run.go()
         save_state(owner, {"status": "ok", "last_sync": contacts.now_iso(), "last_error": "", "sync_token": run.sync_token,
-                           "groups": run.group_state, "linked": len(run.links), "lock_until": 0})
+                           "groups": run.group_state, "linked": len(run.links), "lock_until": 0, **contacts.sync_ok_state()})
         return run.summary
     except GoogleError as exc:
         reauth = exc.status in (400, 401) and "invalid_grant" in json.dumps(exc.payload)
-        save_state(owner, {"status": "reauth" if reauth else "error", "last_error": str(exc)[:300], "lock_until": 0,
-                           "sync_token": run.sync_token if run.sync_token is not None else state.get("sync_token", "")})
+        status = "reauth" if reauth else "error"
+        save_state(owner, {"status": status, "last_error": str(exc)[:300], "lock_until": 0,
+                           "sync_token": run.sync_token if run.sync_token is not None else state.get("sync_token", ""),
+                           **contacts.sync_failed_state(owner, "google", state, status, str(exc)[:300])})
         contacts.log_sync(owner, "google", "error", detail=str(exc)[:500])
         logger.exception("sync of %s failed", owner)
         return "error"
     except Exception as exc:
-        save_state(owner, {"status": "error", "last_error": str(exc)[:300], "lock_until": 0})
+        save_state(owner, {"status": "error", "last_error": str(exc)[:300], "lock_until": 0,
+                           **contacts.sync_failed_state(owner, "google", state, "error", str(exc)[:300])})
         contacts.log_sync(owner, "google", "error", detail=str(exc)[:500])
         raise
 

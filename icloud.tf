@@ -16,7 +16,7 @@ resource "aws_cloudwatch_log_group" "icloud" {
 resource "aws_lambda_function" "icloud" {
   #checkov:skip=CKV_AWS_50:X-Ray is disabled to avoid extra cost on a low-traffic app.
   #checkov:skip=CKV_AWS_115:Reserved concurrency is left to the account pool.
-  #checkov:skip=CKV_AWS_116:A failed sync is written to the sync log; the next one comes on schedule.
+  #checkov:skip=CKV_AWS_116:A failed sync is written to the sync log and mailed to its user; the next one comes on schedule.
   #checkov:skip=CKV_AWS_117:The function calls the CardDAV server of iCloud and public AWS endpoints.
   #checkov:skip=CKV_AWS_173:Environment values are names, not secrets; the passwords are in SSM.
   #checkov:skip=CKV_AWS_272:Code signing is not used for this internal function.
@@ -44,6 +44,8 @@ resource "aws_lambda_function" "icloud" {
       UID_DOMAIN             = local.site_host
       ICLOUD_PASSWORD_PREFIX = local.icloud_password_prefix
       ICLOUD_SYNC_FUNCTION   = local.icloud_function
+      SENDER                 = local.alerts ? var.sender_address : ""
+      SYNC_ALERT_FAILURES    = tostring(var.sync_alert_failures)
     }
   }
 
@@ -53,6 +55,13 @@ resource "aws_lambda_function" "icloud" {
   }
 
   depends_on = [aws_iam_role_policy.lambda]
+
+  lifecycle {
+    precondition {
+      condition     = !local.alerts || (local.custom_domain && endswith(var.sender_address, "@${var.domain_name}"))
+      error_message = "sender_address has to be on domain_name, which the stack makes an SES identity."
+    }
+  }
 }
 
 # A sync is not retried: the next one comes on schedule.

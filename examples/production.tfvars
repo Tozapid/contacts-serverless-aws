@@ -17,3 +17,7 @@ reset_schedule = ""
 # secret goes into SSM by hand (see README). "" leaves Google out.
 google_client_id = ""
 icloud_enabled   = true
+
+# Mails a user whose sync with Google or iCloud fails; the stack makes
+# domain_name an SES identity. "" sends no mails.
+sender_address = "alert@contacts.example.com"

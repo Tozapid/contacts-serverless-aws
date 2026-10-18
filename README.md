@@ -30,7 +30,7 @@ The demo address book is English and made up. Everything on the page works: crea
 - **Groups** as Apple keeps them, with a page per group, and the smart group "No group"; **family relations** in your own words that link cards, and a family graph.
 - **A birthday kept out of the calendars**: it goes to Google and the devices as a plain date labelled "Birthday (not in calendar)", so their birthday calendars leave the card out.
 - **vCard** 2.1, 3.0 and 4.0, in and out, with Apple's labels and the photos.
-- **Sync**: CardDAV for Apple Contacts, Thunderbird, Android (DAVx⁵) and Outlook (CalDav Synchronizer), with an app password per device and a profile for iPhone, iPad and Mac; Google Contacts through the People API; iCloud Contacts through its CardDAV server with an app-specific password. A sync log tells what changed where.
+- **Sync**: CardDAV for Apple Contacts, Thunderbird, Android (DAVx⁵) and Outlook (CalDav Synchronizer), with an app password per device and a profile for iPhone, iPad and Mac; Google Contacts through the People API; iCloud Contacts through its CardDAV server with an app-specific password. A sync log tells what changed where, and a sync with Google or iCloud that fails mails its user (production only).
 - **Account**: two-factor authentication (TOTP), password change; English, Russian, French and Italian; administrators invite and manage the users.
 
 ## How it works
@@ -67,12 +67,24 @@ Each side of a sync is compared with its own fingerprint at the last sync, so a 
 
 Google needs a web application OAuth client of a Google Cloud project with the People API: its id is `google_client_id`, its secret goes into the SSM SecureString `/<name>/google-client-secret` by hand, and the consent page comes back to `/api/oauth/google`. iCloud needs nothing in AWS: each user enters the Apple ID and an app-specific password (account.apple.com → Sign-In and Security → App-Specific Passwords), kept in SSM per user.
 
+### Sync alerts
+
+In production a sync with Google or iCloud that fails tells its user by mail through SES, from `sender_address` (such as `alert@contacts.example.com`) to the address they sign in with. One mail per run of failures, with the error and a link to the page:
+
+- at once when the sign-in is lost (Google revoked the token, the app-specific password of Apple was revoked): no later sync mends it;
+- after `sync_alert_failures` (3) failures in a row for any other error, about 15 minutes, so that a blip of the service passes without a mail.
+
+The state of the sync counts the failures (`failures`, `alerted`); a sync that works, or connecting again, resets them. The mail is in the language the user picked on the page (the Cognito attribute `locale`), else in English. A mail that SES refuses is logged and tried again at the next failure.
+
+The stack makes `domain_name` an SES identity (`ses.tf`): Easy DKIM (three CNAMEs), a MAIL FROM domain `mail.<domain_name>` (MX and SPF) and DMARC, in the Route 53 zone. SES verifies the domain a few minutes after the apply. While the SES account of the region is in the sandbox, mails reach only the addresses verified in SES. The demo creates no SES identity and sends no mail: `demo = true` or an empty `sender_address` turns it off.
+
 ## Test environment and production
 
 The defaults deploy the **test environment**, the public demo above. It is the same code with the sync shown and not run:
 
 - no domain: the page answers at its `*.cloudfront.net` address with CloudFront's certificate, and no DNS is touched;
 - no CardDAV server, no Google and no iCloud functions: the page shows them connected (`DEMO`), with the sync log of the seed;
+- no SES identity and no mails;
 - the sign-in is published and filled in (`demo = true`), password change and two-factor authentication are hidden, and the administration is read-only;
 - the hourly reset (`reset_schedule`) rebuilds everything from `seed/seed.json`;
 - point-in-time recovery is off, and the buckets are deleted with their content on `terraform destroy`.
@@ -87,6 +99,7 @@ The defaults deploy the **test environment**, the public demo above. It is the s
 | `dav_domain_name` | `""` — no CardDAV server | `dav.contacts.example.com` |
 | `google_client_id` | `""` — Google only shown | the client id, its secret in SSM |
 | `icloud_enabled` | `false` — iCloud only shown | `true` |
+| `sender_address` | `""` — no SES, no mails | `alert@contacts.example.com` — mails a failed sync |
 | `admin_email` | `demo@example.com` | your address |
 | `admin_password` | `Demo-Password-1` | `""` — Cognito mails a temporary password |
 | `reset_schedule` | `rate(1 hour)` | `""` — no reset, no examples |
@@ -98,7 +111,7 @@ Pick a fresh `name` (and state key): production is a separate deployment, not a 
 ### What you need
 
 1. An S3 bucket for Terraform state (the S3 backend with the native lockfile, Terraform 1.10+).
-2. The GitHub OIDC provider in the AWS account and a role for this repository that trusts only jobs of the GitHub environment `demo`. Its permissions: everything named with the `name` prefix (`s3:*` on `arn:aws:s3:::contacts-serverless-*`, the table, functions, roles with `iam:PassRole`, log groups, SSM parameters, EventBridge rules), API Gateway, Cognito and CloudFront (their ids are generated), log delivery for API access logs, and the state objects under the state key prefix. The demo needs no ACM or Route 53; production adds them.
+2. The GitHub OIDC provider in the AWS account and a role for this repository that trusts only jobs of the GitHub environment `demo`. Its permissions: everything named with the `name` prefix (`s3:*` on `arn:aws:s3:::contacts-serverless-*`, the table, functions, roles with `iam:PassRole`, log groups, SSM parameters, EventBridge rules), API Gateway, Cognito and CloudFront (their ids are generated), log delivery for API access logs, and the state objects under the state key prefix. The demo needs no ACM, Route 53 or SES; production adds them (SES for the identity of `domain_name` with `sender_address`).
 3. In the GitHub repository: the environment `demo`, and the variables `AWS_ROLE_ARN` (the role) and `TF_STATE_BUCKET` (the state bucket). There are no secrets.
 
 ### GitHub Actions
@@ -140,7 +153,7 @@ terraform apply -var-file=terraform.tfvars        # production, see above
 cd lambda && python3 -m unittest discover -v -p '*_test.py'
 ```
 
-The tests use no network: DynamoDB, S3, Cognito, SSM and the People API are faked, and iCloud is the CardDAV server of this very app with a second user, so the client of iCloud talks to a real server. The reset is tested end to end through the API.
+The tests use no network: DynamoDB, S3, Cognito, SSM, SES and the People API are faked, and iCloud is the CardDAV server of this very app with a second user, so the client of iCloud talks to a real server. The reset is tested end to end through the API.
 
 ## Cost
 
@@ -160,6 +173,7 @@ The tests use no network: DynamoDB, S3, Cognito, SSM and the People API are fake
 | `carddav.tf`, `lambda/carddav.py` | The CardDAV server (production only) |
 | `google.tf`, `lambda/google_sync.py` | The sync with Google Contacts (with `google_client_id`) |
 | `icloud.tf`, `lambda/icloud_sync.py` | The sync with iCloud Contacts (with `icloud_enabled`) |
+| `ses.tf` | The SES identity of `domain_name` for the sync alerts (production with `sender_address`) |
 | `apigateway.tf`, `cognito.tf` | The API and the users |
 | `dynamodb.tf`, `s3.tf` | The table, the page and photo buckets |
 | `cloudfront.tf`, `cloudfront/`, `dns.tf`, `frontend.tf`, `web/` | The distribution, the domains, the page, its fields (`fields.js`) and translations (`i18n.js`) |

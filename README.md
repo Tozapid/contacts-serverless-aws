@@ -4,9 +4,17 @@ An address book of your own, running serverless on AWS: every field of Apple Con
 
 Everything is Terraform and AWS managed services: no servers, nothing running between requests and syncs, so an installation costs cents a month (see [Cost](#cost)).
 
+## Why
+
+**A history of changes you can read.** Apps on a phone get full access to the contacts, and they rewrite the cards their own way: dates and phone numbers in another format, advertising added to a note, now and then an important entry lost. Here every change is a version of the whole card with where it came from — the page, an import, a device over CardDAV (by its name), Google or iCloud. The sync log shows what changed where, and any version, or a deleted card, comes back with one click.
+
+**A birthday calendar without unwanted greetings.** Not everyone in an address book is someone to congratulate, and their entries still must not be deleted. One checkbox by the birthday takes a person out of the birthday calendars of Google and Apple; the date stays on the card and goes to the devices as a plain labelled date.
+
+**No third-party apps.** Every sync runs in the cloud. iPhone, iPad and Mac add the address book as their own CardDAV account (or get it through iCloud); Android and Gmail get the contacts through Google Contacts. The address book is the source of truth: it keeps every field, and a card changed on both sides keeps its version here.
+
 ## Demo
 
-The address of the demo is the output `site_url` of its deployment (a `*.cloudfront.net` address); the deploy job prints it.
+**<https://d1x6hytqipiz4r.cloudfront.net>**
 
 Sign in with `demo@example.com` / `Demo-Password-1` (the fields are filled in for you).
 

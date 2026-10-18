@@ -14,7 +14,7 @@ Everything is Terraform and AWS managed services: no servers, nothing running be
 
 ## Demo
 
-The address of the demo is the output `site_url` of its deployment (a `*.cloudfront.net` address); the deploy job prints it.
+**<https://d1x6hytqipiz4r.cloudfront.net>**
 
 Sign in with `demo@example.com` / `Demo-Password-1` (the fields are filled in for you).
 

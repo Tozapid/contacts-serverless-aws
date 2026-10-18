@@ -112,6 +112,24 @@ data "aws_iam_policy_document" "lambda" {
     resources = ["arn:aws:lambda:${var.region}:${local.account_id}:function:${local.icloud_function}"]
   }
 
+  # The sync functions tell a user by mail that their sync fails. In the SES
+  # sandbox the recipient has to be a verified identity too. Not in the demo.
+  dynamic "statement" {
+    for_each = local.alerts ? [var.sender_address] : []
+
+    content {
+      sid       = "SendSyncAlerts"
+      actions   = ["ses:SendEmail"]
+      resources = ["arn:aws:ses:${var.region}:${local.account_id}:identity/*"]
+
+      condition {
+        test     = "StringEquals"
+        variable = "ses:FromAddress"
+        values   = [statement.value]
+      }
+    }
+  }
+
   statement {
     sid = "ManageUsers"
     actions = [

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.0
+
+### Added
+
+- A mail through SES to a user whose sync with Google or iCloud fails: at once when the sign-in is lost, after three failures in a row otherwise; one mail per run of failures, in the language picked on the page, else in English. The stack makes `domain_name` an SES identity with DKIM, MAIL FROM and DMARC for it (`sender_address`, production only; the demo sends nothing).
+
 ## v0.1.0
 
 ### Added

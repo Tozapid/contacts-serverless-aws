@@ -123,6 +123,7 @@ def connect(owner, payload):
         previous = {}
     save_state(owner, {
         "connected": True, "apple_id": apple_id, "book": book, "status": "connected", "last_error": "",
+        **contacts.sync_ok_state(),
         **({"sync_token": "", "groups": {}, "rgroups": {}} if not previous or previous.get("book") != book else {}),
     })
     contacts.table().put_item(Item={"pk": "ICLOUD", "sk": owner, "at": contacts.now_iso()})
@@ -439,16 +440,19 @@ def sync_user(owner):
         run.go()
         save_state(owner, {"status": "ok", "last_sync": contacts.now_iso(), "last_error": "", "book": client.book,
                            "sync_token": run.sync_token, "groups": run.groups_state, "rgroups": run.rgroups,
-                           "linked": len(run.links), "lock_until": 0})
+                           "linked": len(run.links), "lock_until": 0, **contacts.sync_ok_state()})
         return run.summary
     except ICloudError as exc:
-        save_state(owner, {"status": "reauth" if exc.status == 401 else "error", "last_error": str(exc)[:300], "lock_until": 0,
-                           **({"groups": run.groups_state, "rgroups": run.rgroups} if run else {})})
+        status = "reauth" if exc.status == 401 else "error"
+        save_state(owner, {"status": status, "last_error": str(exc)[:300], "lock_until": 0,
+                           **({"groups": run.groups_state, "rgroups": run.rgroups} if run else {}),
+                           **contacts.sync_failed_state(owner, "icloud", state, status, str(exc)[:300])})
         contacts.log_sync(owner, "icloud", "error", detail=str(exc)[:500])
         logger.exception("sync of %s failed", owner)
         return "error"
     except Exception as exc:
-        save_state(owner, {"status": "error", "last_error": str(exc)[:300], "lock_until": 0})
+        save_state(owner, {"status": "error", "last_error": str(exc)[:300], "lock_until": 0,
+                           **contacts.sync_failed_state(owner, "icloud", state, "error", str(exc)[:300])})
         contacts.log_sync(owner, "icloud", "error", detail=str(exc)[:500])
         raise
 

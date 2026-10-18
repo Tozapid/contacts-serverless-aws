@@ -83,6 +83,28 @@ variable "icloud_sync_minutes" {
   description = "How often the address books connected to iCloud are synced, in minutes."
 }
 
+variable "sender_address" {
+  type        = string
+  default     = ""
+  description = "From address of the mails that tell a user their sync with Google or iCloud fails, such as alert@contacts.example.com, on domain_name, which the stack makes an SES identity (ses.tf). Empty, or the demo: no SES identity and no mails."
+
+  validation {
+    condition     = var.sender_address == "" || can(regex("^[^@\\s]+@[^@\\s]+$", var.sender_address))
+    error_message = "sender_address is an email address or empty."
+  }
+}
+
+variable "sync_alert_failures" {
+  type        = number
+  default     = 3
+  description = "Failed syncs with Google or iCloud in a row after which the user gets a mail. A lost sign-in, which no later sync mends, sends it at once."
+
+  validation {
+    condition     = var.sync_alert_failures >= 1
+    error_message = "sync_alert_failures is at least 1."
+  }
+}
+
 variable "releases_repository" {
   type        = string
   default     = "Tozapid/contacts-serverless-aws"

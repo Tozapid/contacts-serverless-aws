@@ -86,7 +86,7 @@ resource "aws_s3_bucket" "photos" {
   #checkov:skip=CKV_AWS_145:SSE-S3 is enough for private photos. A customer managed key would add a monthly charge.
   #checkov:skip=CKV_AWS_144:Photos are write-once objects with versioning. Cross-region replication is not needed.
   #checkov:skip=CKV2_AWS_62:Photos are referenced from the contacts. Bucket notifications are not needed.
-  #checkov:skip=CKV_AWS_18:The bucket is private. Reads need a signed cookie issued by the API, which logs the caller.
+  #checkov:skip=CKV_AWS_18:Server access logs are optional (access_logs_bucket, aws_s3_bucket_logging below).
   bucket = local.photos_bucket
   # The photos of the demo are wiped every hour anyway.
   force_destroy = var.demo
@@ -199,6 +199,22 @@ resource "aws_s3_bucket_lifecycle_configuration" "photos" {
 
     noncurrent_version_expiration {
       noncurrent_days = 1
+    }
+  }
+}
+
+# Who reads and writes the bucket, when access_logs_bucket is set: S3 server
+# access logs under s3/<account>/<region>/<bucket>/<yyyy>/<MM>/<dd>/ there.
+resource "aws_s3_bucket_logging" "photos" {
+  count = var.access_logs_bucket != "" ? 1 : 0
+
+  bucket        = aws_s3_bucket.photos.id
+  target_bucket = var.access_logs_bucket
+  target_prefix = "s3/"
+
+  target_object_key_format {
+    partitioned_prefix {
+      partition_date_source = "EventTime"
     }
   }
 }

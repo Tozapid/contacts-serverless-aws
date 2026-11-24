@@ -30,7 +30,7 @@ data "archive_file" "api" {
     content  = file("${path.module}/lambda/icloud_sync.py")
     filename = "icloud_sync.py"
   }
-  output_path      = "${path.module}/.build/api.zip"
+  output_path      = "${path.root}/.build/${local.name}-api.zip"
   output_file_mode = "0644"
 }
 
@@ -61,8 +61,8 @@ resource "aws_lambda_function" "api" {
       TABLE_NAME                = aws_dynamodb_table.main.name
       PHOTOS_BUCKET             = aws_s3_bucket.photos.id
       PHOTO_MAX_BYTES           = tostring(var.photo_max_bytes)
-      CLOUDFRONT_KEY_PAIR_ID    = aws_cloudfront_public_key.photos.id
-      PHOTOS_KEY_PARAMETER_NAME = aws_ssm_parameter.photos_signing_key.name
+      CLOUDFRONT_KEY_PAIR_ID    = local.photos_key.public_key_id
+      PHOTOS_KEY_PARAMETER_NAME = local.photos_key.private_key_parameter
       USER_POOL_ID              = aws_cognito_user_pool.main.id
       ADMIN_GROUP               = aws_cognito_user_group.admins.name
       DAV_URL                   = local.dav ? "https://${var.dav_domain_name}" : ""

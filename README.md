@@ -76,35 +76,58 @@ In production a sync with Google or iCloud that fails tells its user by mail thr
 
 The state of the sync counts the failures (`failures`, `alerted`); a sync that works, or connecting again, resets them. The mail is in the language the user picked on the page (the Cognito attribute `locale`), else in English. A mail that SES refuses is logged and tried again at the next failure.
 
-The stack makes `domain_name` an SES identity (`ses.tf`): Easy DKIM (three CNAMEs), a MAIL FROM domain `mail.<domain_name>` (MX and SPF) and DMARC, in the Route 53 zone. SES verifies the domain a few minutes after the apply. While the SES account of the region is in the sandbox, mails reach only the addresses verified in SES. The demo creates no SES identity and sends no mail: `demo = true` or an empty `sender_address` turns it off.
+The module makes `domain_name` an SES identity (`ses.tf`, unless `ses_identity = false`): Easy DKIM (three CNAMEs), a MAIL FROM domain `mail.<domain_name>` (MX and SPF) and DMARC, in the Route 53 zone. SES verifies the domain a few minutes after the apply. While the SES account of the region is in the sandbox, mails reach only the addresses verified in SES. The demo creates no SES identity and sends no mail: `demo = true` or an empty `sender_address` turns it off.
 
-## Test environment and production
+## Use the module
 
-The defaults deploy the **test environment**, the public demo above. It is the same code with the sync shown and not run:
+The root of this repository is the module. It makes no providers: the caller passes `aws` (the region of everything but CloudFront) and `aws.global` (`us-east-1`, CloudFront and its certificate). Every release of [`CHANGELOG.md`](CHANGELOG.md) is a tag `vX.Y.Z`; a site takes a newer version by a newer `ref`, and Settings → Version shows the version of the module and the releases after it.
 
-- no domain: the page answers at its `*.cloudfront.net` address with CloudFront's certificate, and no DNS is touched;
-- no CardDAV server, no Google and no iCloud functions: the page shows them connected (`DEMO`), with the sync log of the seed;
-- no SES identity and no mails;
-- the sign-in is published and filled in (`demo = true`), password change and two-factor authentication are hidden, and the administration is read-only;
-- the hourly reset (`reset_schedule`) rebuilds everything from `seed/seed.json`;
-- point-in-time recovery is off, and the buckets are deleted with their content on `terraform destroy`.
+```hcl
+module "contacts" {
+  source = "git::https://github.com/Tozapid/contacts-serverless-aws.git?ref=v0.4.0"
 
-**Production** runs the sync. Start from [`examples/production.tfvars`](examples/production.tfvars):
+  providers = {
+    aws        = aws
+    aws.global = aws.global
+  }
 
-| Variable | Test environment (default) | Production |
+  name              = "contacts"
+  domain_name       = "contacts.example.com"
+  dav_domain_name   = "dav.contacts.example.com"
+  route53_zone_name = "example.com"
+  admin_email       = "you@example.com"
+  google_client_id  = "<client id>"
+  icloud_enabled    = true
+  sender_address    = "alert@contacts.example.com"
+}
+```
+
+[`examples/production/main.tf`](examples/production/main.tf) is that with its providers and backend. The inputs:
+
+| Variable | Default | What it is |
 | --- | --- | --- |
-| `name` | `contacts-serverless` | `contacts` — the prefix of every resource |
-| `demo` | `true` | `false` |
-| `domain_name`, `route53_zone_name` | `""` — the CloudFront address | `contacts.example.com`, `example.com` |
-| `dav_domain_name` | `""` — no CardDAV server | `dav.contacts.example.com` |
-| `google_client_id` | `""` — Google only shown | the client id, its secret in SSM |
-| `icloud_enabled` | `false` — iCloud only shown | `true` |
-| `sender_address` | `""` — no SES, no mails | `alert@contacts.example.com` — mails a failed sync |
-| `admin_email` | `demo@example.com` | your address |
-| `admin_password` | `Demo-Password-1` | `""` — Cognito mails a temporary password |
-| `reset_schedule` | `rate(1 hour)` | `""` — no reset, no examples |
+| `name` | — | Prefix of every resource name; bucket names add the account id |
+| `admin_email` | — | The first user, an administrator |
+| `admin_password` | `""` | Its permanent password; empty: Cognito mails a temporary one |
+| `domain_name`, `route53_zone_name` | `""` | The page's name and its public Route 53 zone; empty: the `*.cloudfront.net` address |
+| `dav_domain_name` | `""` | The CardDAV server (an API Gateway domain in the same zone); empty: none |
+| `google_client_id`, `google_sync_minutes` | `""`, `5` | The sync with Google Contacts; its client secret goes into SSM by hand |
+| `icloud_enabled`, `icloud_sync_minutes` | `false`, `5` | The sync with iCloud Contacts |
+| `sender_address`, `sync_alert_failures` | `""`, `3` | From address of the mails about a failing sync, on `domain_name`; empty: no mails |
+| `ses_identity` | `true` | The module makes `domain_name` the SES identity (`ses.tf`); `false` when the caller manages it |
+| `demo` | `false` | Public demo: the sign-in published and filled in, the sync shown and not run, no password change or two-factor authentication, read-only administration, no mails |
+| `reset_schedule` | `""` | The hourly reset of the demo (`rate(1 hour)` there) |
+| `access_logs_bucket` | `""` | Bucket of the access logs (see [Access logs](#access-logs)) |
+| `photos_key_from` | preview: its site | Stack whose CloudFront key signs the photo cookies |
+| `photo_max_bytes`, `releases_repository` | see `variables.tf` | The size of a photo, the releases Settings → Version compares with |
 
-Pick a fresh `name` (and state key): production is a separate deployment, not a change of the demo. The domains need a public Route 53 zone in the same account, where the stack validates the certificates and writes the alias records.
+The zips of the functions are built at plan time in `.build/` of the root module, not of the module: a CI that carries what a plan makes to its apply leaves `.terraform/`, where a module fetched from git lives, behind.
+
+The domains need a public Route 53 zone in the same account, where the module validates the certificates and writes the alias records. With `sender_address`, it makes `domain_name` an SES identity: Easy DKIM, a MAIL FROM domain `mail.<domain_name>` and DMARC, in the same zone. Sign in with the temporary password Cognito mails to `admin_email` and invite the others in Settings → Users.
+
+### The demo
+
+[`demo/`](demo) is the root module of the public demo: the module from `../` with `demo = true`, the published sign-in, the hourly reset and no domain, so it answers at its CloudFront address and touches no DNS; there is no CardDAV server, no Google and no iCloud function (the page shows them connected, with the sync log of the seed), no SES identity and no mail; point-in-time recovery is off, and the buckets go with their content on `terraform destroy`.
 
 ## Deploy
 
@@ -116,29 +139,29 @@ Pick a fresh `name` (and state key): production is a separate deployment, not a 
 
 ### GitHub Actions
 
-[`.github/workflows/terraform.yml`](.github/workflows/terraform.yml) only calls the shared workflow of [Tozapid/demo-ci-cd-skeleton](https://github.com/Tozapid/demo-ci-cd-skeleton):
+[`.github/workflows/terraform.yml`](.github/workflows/terraform.yml) only calls the shared workflow of [Tozapid/demo-ci-cd-skeleton](https://github.com/Tozapid/demo-ci-cd-skeleton), with `working_directory: demo`:
 
-- every push and pull request: `terraform fmt` and `terraform validate`; the Lambda tests; the page's syntax check;
+- every push and pull request: `terraform fmt` and `terraform validate` of `demo/`, and with it of the module; the Lambda tests; the page's syntax check;
 - pull requests from this repository: `terraform plan` in the environment `demo`;
-- a preview of a pull request, by hand: Run workflow with `preview` = its number deploys its last push once more as `contacts-serverless-pr<number>`, with its own state, and comments the address on it; it is destroyed when the pull request is merged or closed, by hand (`destroy`), or by the daily sweep, which also takes those not deployed for a week;
+- a preview of a pull request, by hand: Run workflow with `preview` = its number deploys its last push once more as `contacts-serverless-pr<number>`, with its own state, and comments the address on it. A preview signs photo cookies with the CloudFront key of the main site (read from the SSM parameter `/contacts-serverless/cloudfront-key-ids`), because an account holds at most ten CloudFront public keys; the main site has to be deployed first. The variable `photos_key_from` changes where the key comes from. It is destroyed when the pull request is merged or closed, by hand (`destroy`), or by the daily sweep, which also takes those not deployed for a week;
 - a push to `main` or a manual run: plan and apply in the environment `demo`. The job stops if the plan would destroy or replace a bucket, the table or the user pool;
-- after `main` is deployed: the GitHub release of the newest `CHANGELOG.md` entry, once.
+- after `main` is deployed: the tag and the GitHub release of the newest `CHANGELOG.md` entry, once. Every version is a tag the sites pin the module to.
 
 The jobs get AWS credentials from GitHub's OIDC token: no AWS key is stored anywhere.
 
 ### Versions and releases
 
-Every entry of [`CHANGELOG.md`](CHANGELOG.md) starts with its version (`## v0.1.0`, optionally ` — ` and a date or a title), with the changes under `### Added`, `### Changed`, `### Fixed` and `### Security`, newest first. The site takes its version from the newest entry when Terraform deploys it, and the release job makes it a tag and a GitHub release. Settings → Version reads the releases of `releases_repository` and shows those after the version of the site.
+Every entry of [`CHANGELOG.md`](CHANGELOG.md) starts with its version, optionally followed by a date or a title (`## v0.2.0`, `## v0.2.0 — 2026-11-01`), with the changes under `### Added`, `### Changed`, `### Fixed` and `### Security`, newest first. A site takes its version from the newest entry of the module it runs, and the release job makes it a tag and a GitHub release. A change that a site has to take over is a new entry, and so a new tag. Settings → Version reads the releases of `releases_repository` and shows those after the version of the site.
 
 ### From a workstation
 
 ```bash
+cd demo
 terraform init \
   -backend-config="bucket=<state bucket>" \
   -backend-config="key=contacts-serverless-aws/terraform.tfstate" \
   -backend-config="region=eu-central-1"
-terraform apply                                   # the test environment
-terraform apply -var-file=terraform.tfvars        # production, see above
+terraform apply
 ```
 
 ## Access logs
@@ -185,7 +208,9 @@ The tests use no network: DynamoDB, S3, Cognito, SSM, SES and the People API are
 | `dynamodb.tf`, `s3.tf` | The table, the page and photo buckets |
 | `cloudfront.tf`, `cloudfront/`, `dns.tf`, `frontend.tf`, `web/` | The distribution, the domains, the page, its fields (`fields.js`) and translations (`i18n.js`) |
 | `reset.tf`, `lambda/reset.py`, `seed/seed.json` | The hourly reset of the demo and its examples |
-| `examples/production.tfvars` | A starting point for production |
+| `main.tf`, `terraform.tf`, `variables.tf`, `outputs.tf` | The module: its providers (`aws`, `aws.global`), inputs and outputs |
+| `demo/` | The public demo, a call of the module, and the moves of its state |
+| `examples/production/` | A starting point for production |
 
 ## Limitations
 

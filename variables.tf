@@ -1,18 +1,11 @@
-variable "region" {
-  type        = string
-  default     = "eu-central-1"
-  description = "Region of every resource but CloudFront: the API, the data, the photos and the sign-in."
-}
-
 variable "name" {
   type        = string
-  default     = "contacts-serverless"
-  description = "Prefix of every resource name; bucket names add the account id. The deploy role of the demo is limited to it."
+  description = "Prefix of every resource name; bucket names add the account id."
 }
 
 variable "demo" {
   type        = bool
-  default     = true
+  default     = false
   description = "Public demo: the sign-in screen shows and fills in the demo sign-in, the settings hide the password and two-factor authentication, administrators may look at the users but not change them, and the sync with Google, iCloud and devices is shown but not run."
 }
 
@@ -36,21 +29,20 @@ variable "dav_domain_name" {
 
 variable "admin_email" {
   type        = string
-  default     = "demo@example.com"
   description = "Sign-in of the first user, an administrator. Self sign-up is off; administrators invite the others on the page."
 }
 
 variable "admin_password" {
   type        = string
-  default     = "Demo-Password-1"
+  default     = ""
   sensitive   = true
   description = "Permanent password of the first user, published in the demo and put back by the reset. Empty: Cognito mails admin_email a temporary password instead."
 }
 
 variable "reset_schedule" {
   type        = string
-  default     = "rate(1 hour)"
-  description = "When the demo goes back to its initial state: the address books are wiped and the examples of seed/seed.json written again, the first user gets admin_password back and other users go. An empty string turns the reset off."
+  default     = ""
+  description = "When the demo goes back to its initial state, such as rate(1 hour): the address books are wiped and the examples of seed/seed.json written again, the first user gets admin_password back and other users go. Empty: no reset."
 }
 
 variable "photo_max_bytes" {
@@ -94,6 +86,12 @@ variable "sender_address" {
   }
 }
 
+variable "ses_identity" {
+  type        = bool
+  default     = true
+  description = "Makes domain_name an SES identity for the mails of sender_address (ses.tf). False when the caller manages the SES identity of the domain itself."
+}
+
 variable "sync_alert_failures" {
   type        = number
   default     = 3
@@ -103,6 +101,12 @@ variable "sync_alert_failures" {
     condition     = var.sync_alert_failures >= 1
     error_message = "sync_alert_failures is at least 1."
   }
+}
+
+variable "photos_key_from" {
+  type        = string
+  default     = null
+  description = "Name of a deployed stack of this project whose CloudFront key signs the photo cookies, instead of a key of its own; \"\" for its own. Unset: a preview (<name>-pr<N>) uses <name>'s, any other stack its own. The account allows ten CloudFront public keys."
 }
 
 variable "releases_repository" {
@@ -115,13 +119,4 @@ variable "access_logs_bucket" {
   type        = string
   default     = ""
   description = "Bucket that the access logs of this site go to, such as the logs_bucket of an overview of the account (Tozapid/account-serverless-aws): the standard logs (v2) of the distribution under cloudfront/<name>/, and the S3 server access logs of the photos bucket under s3/. Its policy has to let delivery.logs.amazonaws.com and logging.s3.amazonaws.com write there. Empty: no access logs."
-}
-
-variable "tags" {
-  type = map(string)
-  default = {
-    Managed = "IAC"
-    Project = "contacts-serverless-aws"
-  }
-  description = "Tags applied to supported resources."
 }

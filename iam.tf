@@ -13,7 +13,7 @@ data "aws_iam_policy_document" "lambda" {
   statement {
     sid       = "ReadPhotosSigningKey"
     actions   = ["ssm:GetParameter"]
-    resources = [aws_ssm_parameter.photos_signing_key.arn]
+    resources = ["arn:aws:ssm:${local.region}:${local.account_id}:parameter${local.photos_key.private_key_parameter}"]
   }
 
   statement {
@@ -75,7 +75,7 @@ data "aws_iam_policy_document" "lambda" {
   statement {
     sid       = "GoogleClientSecret"
     actions   = ["ssm:GetParameter"]
-    resources = ["arn:aws:ssm:${var.region}:${local.account_id}:parameter${local.google_secret_parameter}"]
+    resources = ["arn:aws:ssm:${local.region}:${local.account_id}:parameter${local.google_secret_parameter}"]
   }
 
   statement {
@@ -85,14 +85,14 @@ data "aws_iam_policy_document" "lambda" {
       "ssm:PutParameter",
       "ssm:DeleteParameter",
     ]
-    resources = ["arn:aws:ssm:${var.region}:${local.account_id}:parameter${local.google_token_prefix}/*"]
+    resources = ["arn:aws:ssm:${local.region}:${local.account_id}:parameter${local.google_token_prefix}/*"]
   }
 
   # "Sync now" and the sync after connecting start the sync function.
   statement {
     sid       = "StartGoogleSync"
     actions   = ["lambda:InvokeFunction"]
-    resources = ["arn:aws:lambda:${var.region}:${local.account_id}:function:${local.google_function}"]
+    resources = ["arn:aws:lambda:${local.region}:${local.account_id}:function:${local.google_function}"]
   }
 
   statement {
@@ -102,14 +102,14 @@ data "aws_iam_policy_document" "lambda" {
       "ssm:PutParameter",
       "ssm:DeleteParameter",
     ]
-    resources = ["arn:aws:ssm:${var.region}:${local.account_id}:parameter${local.icloud_password_prefix}/*"]
+    resources = ["arn:aws:ssm:${local.region}:${local.account_id}:parameter${local.icloud_password_prefix}/*"]
   }
 
   # "Sync now" and the sync after connecting start the iCloud sync function.
   statement {
     sid       = "StartICloudSync"
     actions   = ["lambda:InvokeFunction"]
-    resources = ["arn:aws:lambda:${var.region}:${local.account_id}:function:${local.icloud_function}"]
+    resources = ["arn:aws:lambda:${local.region}:${local.account_id}:function:${local.icloud_function}"]
   }
 
   # The sync functions tell a user by mail that their sync fails. In the SES
@@ -120,7 +120,7 @@ data "aws_iam_policy_document" "lambda" {
     content {
       sid       = "SendSyncAlerts"
       actions   = ["ses:SendEmail"]
-      resources = ["arn:aws:ses:${var.region}:${local.account_id}:identity/*"]
+      resources = ["arn:aws:ses:${local.region}:${local.account_id}:identity/*"]
 
       condition {
         test     = "StringEquals"

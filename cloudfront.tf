@@ -1,26 +1,57 @@
+# The key that signs the photo cookies. An account holds at most ten
+# CloudFront public keys, and the limit is not raised, so a preview
+# (<name>-pr<N>) does not make one: it signs with the key of the main site,
+# whose ids the main site publishes in /<name>/cloudfront-key-ids. The main
+# site has to be deployed with that parameter before a preview.
+# photos_key_from picks another stack, or "" for a key of its own.
 resource "tls_private_key" "photos" {
+  count     = local.own_photos_key ? 1 : 0
   algorithm = "RSA"
   rsa_bits  = 2048
 }
 
 resource "aws_cloudfront_public_key" "photos" {
+  count       = local.own_photos_key ? 1 : 0
   provider    = aws.global
   name        = "${local.name}-photos"
-  encoded_key = tls_private_key.photos.public_key_pem
+  encoded_key = tls_private_key.photos[0].public_key_pem
 }
 
 resource "aws_cloudfront_key_group" "photos" {
+  count    = local.own_photos_key ? 1 : 0
   provider = aws.global
   name     = "${local.name}-photos"
-  items    = [aws_cloudfront_public_key.photos.id]
+  items    = [aws_cloudfront_public_key.photos[0].id]
 }
 
 resource "aws_ssm_parameter" "photos_signing_key" {
   #checkov:skip=CKV_AWS_337:The AWS managed SSM key is enough for this CloudFront signing key.
+  count       = local.own_photos_key ? 1 : 0
   name        = "/${local.name}/cloudfront-private-key"
   description = "Private key used to sign CloudFront cookies for contact photos."
   type        = "SecureString"
-  value       = tls_private_key.photos.private_key_pem
+  value       = tls_private_key.photos[0].private_key_pem
+}
+
+# The ids a preview needs to sign with this key; the private key stays in its
+# own SecureString parameter.
+resource "aws_ssm_parameter" "photos_key" {
+  #checkov:skip=CKV2_AWS_34:Ids and a parameter name, nothing secret.
+  count       = local.own_photos_key ? 1 : 0
+  name        = "/${local.name}/cloudfront-key-ids"
+  description = "CloudFront key group and public key of the photo cookies, for previews."
+  type        = "String"
+  value = jsonencode({
+    key_group_id          = aws_cloudfront_key_group.photos[0].id
+    public_key_id         = aws_cloudfront_public_key.photos[0].id
+    private_key_parameter = aws_ssm_parameter.photos_signing_key[0].name
+  })
+}
+
+# The ids as JSON, not the private key next to them.
+data "aws_ssm_parameter" "shared_photos_key" {
+  count = local.own_photos_key ? 0 : 1
+  name  = "/${local.photos_key_from}/cloudfront-key-ids"
 }
 
 resource "aws_cloudfront_function" "api_host" {
@@ -206,7 +237,7 @@ resource "aws_cloudfront_distribution" "web" {
   }
 
   origin {
-    domain_name = "${aws_apigatewayv2_api.http.id}.execute-api.${var.region}.amazonaws.com"
+    domain_name = "${aws_apigatewayv2_api.http.id}.execute-api.${local.region}.amazonaws.com"
     origin_id   = "api"
 
     custom_origin_config {
@@ -255,7 +286,7 @@ resource "aws_cloudfront_distribution" "web" {
     viewer_protocol_policy = "redirect-to-https"
     compress               = true
     cache_policy_id        = aws_cloudfront_cache_policy.photos.id
-    trusted_key_groups     = [aws_cloudfront_key_group.photos.id]
+    trusted_key_groups     = [local.photos_key.key_group_id]
 
     response_headers_policy_id = aws_cloudfront_response_headers_policy.photos.id
   }

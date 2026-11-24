@@ -32,3 +32,8 @@ output "dav_url" {
   description = "CardDAV server for Apple Contacts, Thunderbird and other clients; empty without dav_domain_name"
   value       = local.dav ? "https://${var.dav_domain_name}" : ""
 }
+
+output "admin_username" {
+  description = "Email of the first user"
+  value       = var.admin_email
+}

@@ -39,10 +39,15 @@ variable "admin_password" {
   description = "Permanent password of the first user, published in the demo and put back by the reset. Empty: Cognito mails admin_email a temporary password instead."
 }
 
-variable "reset_schedule" {
-  type        = string
-  default     = ""
-  description = "When the demo goes back to its initial state, such as rate(1 hour): the address books are wiped and the examples of seed/seed.json written again, the first user gets admin_password back and other users go. Empty: no reset."
+variable "reset_delay_hours" {
+  type        = number
+  default     = 0
+  description = "Hours after the first change through the API that the demo goes back to its initial state: the address books are wiped and the examples of seed/seed.json written again, the first user gets admin_password back and other users go. Empty: no reset. Nothing runs on a schedule: a demo nobody changes is not reset."
+
+  validation {
+    condition     = var.reset_delay_hours >= 0
+    error_message = "reset_delay_hours is a number of hours, 0 for no reset."
+  }
 }
 
 variable "photo_max_bytes" {

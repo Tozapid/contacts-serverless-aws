@@ -30,7 +30,7 @@ locals {
   dav    = var.dav_domain_name != ""
   google = var.google_client_id != ""
   icloud = var.icloud_enabled
-  reset  = var.reset_schedule != ""
+  reset  = var.reset_delay_hours > 0
   # Mails to a user whose sync with Google or iCloud fails (ses.tf), from
   # sender_address on domain_name. The demo runs no sync and sends nothing.
   alerts = !var.demo && var.sender_address != ""

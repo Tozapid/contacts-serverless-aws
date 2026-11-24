@@ -1,8 +1,23 @@
 locals {
   name          = var.name
   account_id    = data.aws_caller_identity.current.account_id
+  region        = data.aws_region.current.region
   web_bucket    = "${local.name}-web-${local.account_id}"
   photos_bucket = "${local.name}-photos-${local.account_id}"
+  # A preview signs photo cookies with the key of the site it previews.
+  photos_key_from = var.photos_key_from != null ? var.photos_key_from : try(regex("^(.+)-pr[0-9]+$", var.name)[0], "")
+  own_photos_key  = local.photos_key_from == ""
+  # Exactly one of the lists has an element. A conditional would not do:
+  # both of its sides are evaluated, and the one left out is empty.
+  photos_key = one(concat(
+    [for index, group in aws_cloudfront_key_group.photos : {
+      key_group_id          = group.id
+      public_key_id         = aws_cloudfront_public_key.photos[index].id
+      private_key_parameter = aws_ssm_parameter.photos_signing_key[index].name
+    }],
+    # Ids and a parameter name; the data source marks every value sensitive.
+    [for parameter in data.aws_ssm_parameter.shared_photos_key : jsondecode(nonsensitive(parameter.value))],
+  ))
 
   # The page on its own domain, or on the CloudFront address without one.
   custom_domain = var.domain_name != ""
@@ -19,6 +34,8 @@ locals {
   # Mails to a user whose sync with Google or iCloud fails (ses.tf), from
   # sender_address on domain_name. The demo runs no sync and sends nothing.
   alerts = !var.demo && var.sender_address != ""
+  # The SES identity of domain_name, unless the caller manages it.
+  ses_identity = local.alerts && var.ses_identity
 
   # The version of this deployment: the newest entry of CHANGELOG.md.
   version = regex("(?m)^## (v[0-9]+\\.[0-9]+\\.[0-9]+)(?:\\s|$)", file("${path.module}/CHANGELOG.md"))[0]
@@ -39,7 +56,7 @@ locals {
     "script-src 'self' https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.15/ https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/",
     "style-src 'self'",
     "img-src 'self' blob: data:",
-    "connect-src 'self' https://cognito-idp.${var.region}.amazonaws.com https://*.s3.${var.region}.amazonaws.com",
+    "connect-src 'self' https://cognito-idp.${local.region}.amazonaws.com https://*.s3.${local.region}.amazonaws.com",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

@@ -18,7 +18,7 @@ Everything is Terraform and AWS managed services: no servers, nothing running be
 
 Sign in with `demo@example.com` / `Demo-Password-1` (the fields are filled in for you).
 
-The demo address book is English and made up. Everything on the page works: create, edit, delete and restore cards, read and restore their history, search (also in the history), merge the duplicates it holds, groups, family relations and the family graph, drafts, import and export of vCard, photos. **The sync is only shown**: Google, iCloud and the devices appear connected, with a sync log of examples, but there is no CardDAV server, and no Google or Apple account behind them. The demo user is an administrator, so the users are there to look at; changing them is not. The demo is public and goes back to its initial state **every hour**: the address books, photos, drafts and logs are wiped, the examples of [`seed/seed.json`](seed/seed.json) are written again, the demo password is put back and any other user is deleted. Changing the password and two-factor authentication are hidden in the demo, so no visitor can lock the others out.
+The demo address book is English and made up. Everything on the page works: create, edit, delete and restore cards, read and restore their history, search (also in the history), merge the duplicates it holds, groups, family relations and the family graph, drafts, import and export of vCard, photos. **The sync is only shown**: Google, iCloud and the devices appear connected, with a sync log of examples, but there is no CardDAV server, and no Google or Apple account behind them. The demo user is an administrator, so the users are there to look at; changing them is not. The demo is public and goes back to its initial state **six hours after the first change** (a demo nobody changes is not reset): the address books, photos, drafts and logs are wiped, the examples of [`seed/seed.json`](seed/seed.json) are written again, the demo password is put back and any other user is deleted. Changing the password and two-factor authentication are hidden in the demo, so no visitor can lock the others out.
 
 ## Features
 
@@ -46,7 +46,7 @@ flowchart LR
   EB[EventBridge] --> LG[Lambda: Google sync] <--> G[People API]
   EB --> LI[Lambda: iCloud sync] <--> I[contacts.icloud.com]
   L & LD & LG & LI <--> DB[(DynamoDB)]
-  EB2[EventBridge, demo only] --> R[Lambda: hourly reset]
+  EB2[EventBridge Scheduler, demo only, after a change] --> R[Lambda: reset]
 ```
 
 | Part | Service |
@@ -59,7 +59,7 @@ flowchart LR
 | CardDAV | `lambda/carddav.py` on an HTTP API of its own (`dav_domain_name`): CloudFront does not pass `PROPFIND` and `REPORT` |
 | Google | `lambda/google_sync.py`, EventBridge every `google_sync_minutes` |
 | iCloud | `lambda/icloud_sync.py`, a CardDAV client of iCloud, EventBridge every `icloud_sync_minutes` |
-| Demo reset | `lambda/reset.py`, EventBridge `rate(1 hour)` |
+| Demo reset | `lambda/reset.py`, a one-off EventBridge Scheduler schedule that the first change makes |
 
 ### Sync
 
@@ -84,7 +84,7 @@ The root of this repository is the module. It makes no providers: the caller pas
 
 ```hcl
 module "contacts" {
-  source = "git::https://github.com/Tozapid/contacts-serverless-aws.git?ref=v0.4.1"
+  source = "git::https://github.com/Tozapid/contacts-serverless-aws.git?ref=v0.5.0"
 
   providers = {
     aws        = aws
@@ -116,7 +116,7 @@ module "contacts" {
 | `sender_address`, `sync_alert_failures` | `""`, `3` | From address of the mails about a failing sync, on `domain_name`; empty: no mails |
 | `ses_identity` | `true` | The module makes `domain_name` the SES identity (`ses.tf`); `false` when the caller manages it |
 | `demo` | `false` | Public demo: the sign-in published and filled in, the sync shown and not run, no password change or two-factor authentication, read-only administration, no mails |
-| `reset_schedule` | `""` | The hourly reset of the demo (`rate(1 hour)` there) |
+| `reset_delay_hours` | `0` | Hours after the first change that the demo is reset (`6` there); `0`: no reset |
 | `access_logs_bucket` | `""` | Bucket of the access logs (see [Access logs](#access-logs)) |
 | `photos_key_from` | preview: its site | Stack whose CloudFront key signs the photo cookies |
 | `photo_max_bytes`, `releases_repository` | see `variables.tf` | The size of a photo, the releases Settings → Version compares with |
@@ -127,7 +127,7 @@ The domains need a public Route 53 zone in the same account, where the module va
 
 ### The demo
 
-[`demo/`](demo) is the root module of the public demo: the module from `../` with `demo = true`, the published sign-in, the hourly reset and no domain, so it answers at its CloudFront address and touches no DNS; there is no CardDAV server, no Google and no iCloud function (the page shows them connected, with the sync log of the seed), no SES identity and no mail; point-in-time recovery is off, and the buckets go with their content on `terraform destroy`.
+[`demo/`](demo) is the root module of the public demo: the module from `../` with `demo = true`, the published sign-in, the reset six hours after a change and no domain, so it answers at its CloudFront address and touches no DNS; there is no CardDAV server, no Google and no iCloud function (the page shows them connected, with the sync log of the seed), no SES identity and no mail; point-in-time recovery is off, and the buckets go with their content on `terraform destroy`.
 
 ## Deploy
 
@@ -207,7 +207,7 @@ The tests use no network: DynamoDB, S3, Cognito, SSM, SES and the People API are
 | `apigateway.tf`, `cognito.tf` | The API and the users |
 | `dynamodb.tf`, `s3.tf` | The table, the page and photo buckets |
 | `cloudfront.tf`, `cloudfront/`, `dns.tf`, `frontend.tf`, `web/` | The distribution, the domains, the page, its fields (`fields.js`) and translations (`i18n.js`) |
-| `reset.tf`, `lambda/reset.py`, `seed/seed.json` | The hourly reset of the demo and its examples |
+| `reset.tf`, `lambda/reset.py`, `seed/seed.json` | The reset of the demo and its examples |
 | `main.tf`, `terraform.tf`, `variables.tf`, `outputs.tf` | The module: its providers (`aws`, `aws.global`), inputs and outputs |
 | `demo/` | The public demo, a call of the module, and the moves of its state |
 | `examples/production/` | A starting point for production |

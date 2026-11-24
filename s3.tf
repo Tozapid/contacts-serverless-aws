@@ -88,7 +88,7 @@ resource "aws_s3_bucket" "photos" {
   #checkov:skip=CKV2_AWS_62:Photos are referenced from the contacts. Bucket notifications are not needed.
   #checkov:skip=CKV_AWS_18:Server access logs are optional (access_logs_bucket, aws_s3_bucket_logging below).
   bucket = local.photos_bucket
-  # The photos of the demo are wiped every hour anyway.
+  # The reset wipes the photos of the demo anyway.
   force_destroy = var.demo
 }
 

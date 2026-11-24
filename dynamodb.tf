@@ -5,7 +5,7 @@
 # restored. The page reads a user's cards with one query of the partition.
 resource "aws_dynamodb_table" "main" {
   #checkov:skip=CKV_AWS_119:An AWS owned key avoids a dedicated KMS charge.
-  #checkov:skip=CKV_AWS_28:Point-in-time recovery is on outside the demo, which is rebuilt every hour.
+  #checkov:skip=CKV_AWS_28:Point-in-time recovery is on outside the demo, which the reset rebuilds.
   name         = local.name
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "pk"
@@ -28,7 +28,7 @@ resource "aws_dynamodb_table" "main" {
     enabled        = true
   }
 
-  # The demo is rebuilt every hour; a backup of it has nothing to bring back.
+  # The reset rebuilds the demo; a backup of it has nothing to bring back.
   point_in_time_recovery {
     enabled = !var.demo
   }

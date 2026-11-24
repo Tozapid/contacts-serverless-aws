@@ -84,7 +84,7 @@ The root of this repository is the module. It makes no providers: the caller pas
 
 ```hcl
 module "contacts" {
-  source = "git::https://github.com/Tozapid/contacts-serverless-aws.git?ref=v0.4.0"
+  source = "git::https://github.com/Tozapid/contacts-serverless-aws.git?ref=v0.4.1"
 
   providers = {
     aws        = aws

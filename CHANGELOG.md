@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.4.1
+
+### Removed
+
+- `demo/moved.tf`: the state of the demo already keeps its resources under `module.contacts`. A site that still has the resources at the top of its state moves them in its own root module before taking this version.
+
 ## v0.4.0
 
 ### Changed

@@ -833,6 +833,48 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
    100dvh is what is seen, so a dialog keeps its title and buttons in view. */
 .dialog, dialog.modal { max-height: calc(100dvh - 32px); }
 
+/* Calendar: a month of birthdays and dates. The ones no calendar of Google
+   or Apple shows are dashed and muted; a phone gets the month as a list. */
+dialog.modal.calendar-dialog { width: min(1100px, calc(100% - 24px)); }
+.calendar { display: grid; gap: 10px; }
+.calendar p { margin: 0; }
+.cal-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.cal-head .actions { margin: 0; flex-wrap: wrap; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.cal-weekday { padding: 6px 8px; font-size: 12px; color: var(--muted); text-transform: capitalize; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--surface-2); }
+/* The window keeps its size: six weeks of cells of one height, and the
+   events of a busy day scroll inside their cell. */
+.cal-cell { height: 104px; padding: 4px; display: flex; flex-direction: column; gap: 3px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); min-width: 0; }
+.cal-cell-events { display: flex; flex-direction: column; gap: 3px; overflow-y: auto; min-height: 0; flex: 1; }
+.calendar > p { min-height: 1.6em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-cell.empty { background: var(--surface-2); }
+.cal-day { font-size: 12px; color: var(--muted); padding: 0 2px; }
+.cal-cell.today .cal-day { color: var(--accent-ink); background: var(--accent); border-radius: 999px; padding: 0 6px; align-self: flex-start; font-weight: 600; }
+.cal-event { display: grid; gap: 0; padding: 3px 6px; border-radius: 6px; font-size: 12px; line-height: 1.3; text-decoration: none; color: var(--ink); background: var(--accent-soft); border: 1px solid transparent; min-width: 0; }
+.cal-event.birthday { background: var(--ok-soft); }
+.cal-event:hover { border-color: var(--accent); }
+.cal-event > span { overflow-wrap: anywhere; }
+.cal-name { font-weight: 600; }
+.cal-what, .cal-why { color: var(--muted); }
+.cal-why { font-style: italic; }
+.cal-event.hidden-event { background: transparent; border: 1px dashed var(--line-strong); color: var(--muted); }
+.cal-event.hidden-event .cal-name { font-weight: 500; }
+/* The legend is the filter: a kind of event to show alone. */
+.cal-legend { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+button.cal-event.sample { display: inline-block; font: inherit; font-size: 13px; padding: 5px 10px; cursor: pointer; }
+button.cal-event.sample:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.cal-event.sample.on { border: 2px solid var(--accent); padding: 4px 9px; font-weight: 600; }
+.cal-agenda { display: none; list-style: none; margin: 0; padding: 0; height: min(60dvh, 520px); overflow-y: auto; }
+.cal-agenda li { display: grid; grid-template-columns: 5.5em minmax(0, 1fr); gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+.cal-agenda li.today .cal-date { color: var(--accent-text); font-weight: 600; }
+.cal-date { font-size: 13px; color: var(--muted); text-transform: capitalize; }
+.cal-items { display: grid; gap: 4px; }
+@media (max-width: 760px) {
+  .cal-grid { display: none; }
+  .cal-agenda { display: block; }
+  .cal-event { font-size: 14px; }
+}
+
 /* Print -------------------------------------------------------------------
    An open card prints alone: its photo and every field it has, without the
    buttons, the list, the bar on top and the dialogs. With no card open the
@@ -853,9 +895,16 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   }
   @page { margin: 15mm; }
   body { background: #fff; color: #000; }
-  .top, .legal-foot, #about, .toast, .dialog-wrap, dialog,
+  body:has(dialog.calendar-dialog[open]) .app { display: none !important; }
+  dialog.calendar-dialog[open] { position: static; width: auto; max-height: none; box-shadow: none; border: 0; }
+  dialog.calendar-dialog .close { display: none !important; }
+  .top, .legal-foot, #about, .toast, .dialog-wrap, dialog:not(.calendar-dialog),
   .actions, .back, .icon-button, .star, .map-link, .list-tools, .found, .history-found, .new-draft,
   .detail-pane .placeholder, .add-field, .add-row { display: none !important; }
+  .cal-cell { height: 80px; }
+  .cal-cell-events { overflow: hidden; }
+  .cal-agenda { height: auto; overflow: visible; }
+  .cal-event, .cal-cell.today .cal-day { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .panes { display: block; padding: 0; max-width: none; }
   .detail-open .list-pane { display: none !important; }
   .app:not(.detail-open) .detail-pane { display: none !important; }

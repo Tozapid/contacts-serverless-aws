@@ -762,20 +762,36 @@ fieldset.group .check .avatar { margin: 0 2px; }
 .link-state { display: flex; gap: 8px; align-items: center; }
 .link-state:empty { display: none; }
 
-/* The family graph. */
-dialog.modal.graph-dialog { width: min(920px, calc(100% - 24px)); }
-.graph-wrap { overflow: auto; }
-svg.graph { width: 100%; height: auto; max-height: 72vh; display: block; }
-.graph-edge { fill: none; stroke: var(--line-strong); stroke-width: 1.6; }
-.graph-arrow { fill: var(--line-strong); }
+/* The family graph: a family tree, a row per generation, on a canvas of
+   its own that zooms and pans, with the buttons in its corner. */
+dialog.modal.graph-dialog { width: min(1100px, calc(100% - 24px)); }
+.graph-wrap { position: relative; height: min(70vh, 640px); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); overflow: hidden; }
+svg.graph { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+svg.graph.panning { cursor: grabbing; }
+.graph-tools { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 4px; }
+.graph-tools button { padding: 4px 10px; min-width: 34px; background: var(--surface); }
+.graph-edge { fill: none; stroke: var(--muted); stroke-width: 1.8; }
+.graph-edge.kin { stroke: var(--accent); }
+.graph-edge.couple { stroke: var(--accent); stroke-width: 1.6; }
+.graph-edge.sibling { stroke: var(--accent); stroke-dasharray: 6 4; }
+.graph-edge.far { stroke-dasharray: 6 4; }
+.graph-edge.other { stroke: var(--line-strong); stroke-dasharray: 2 4; }
 .graph-label rect { fill: var(--surface); stroke: var(--line); }
 .graph-label text { fill: var(--muted); font-size: 12px; }
+.graph-node .graph-role { fill: var(--muted); font-size: 12px; }
+/* Names stay readable where a line passes behind them. */
+.graph-node .graph-name, .graph-node .graph-role { paint-order: stroke; stroke: var(--surface-2); stroke-width: 4px; stroke-linejoin: round; }
+.graph-node circle { stroke-width: 2; }
+.graph-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.graph-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.graph-key { overflow: visible; }
 .graph-node { cursor: pointer; }
+.graph-node.dragging { cursor: grabbing; }
 .graph-node circle { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
 .graph-node.center circle { fill: var(--accent); }
 .graph-node .graph-initials { fill: var(--accent-text); font-size: 15px; font-weight: 600; }
 .graph-node.center .graph-initials { fill: var(--accent-ink); }
-.graph-node .graph-name { fill: var(--ink); font-size: 13px; }
+.graph-node .graph-name { fill: var(--ink); font-size: 13px; font-weight: 500; }
 .graph-node:hover circle, .graph-node:focus-visible circle { stroke-width: 3; }
 .graph-node:focus { outline: none; }
 
@@ -874,6 +890,18 @@ button.cal-event.sample.on { border: 2px solid var(--accent); padding: 4px 9px; 
   .cal-agenda { display: block; }
   .cal-event { font-size: 14px; }
 }
+
+/* Keyboard shortcuts: the list in its window, and the hint on "Save". */
+kbd { display: inline-block; min-width: 1.6em; padding: 1px 6px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 5px; font-family: var(--sans); font-size: 12px; line-height: 1.5; text-align: center; background: var(--surface-2); color: var(--ink); }
+kbd + kbd { margin-left: 3px; }
+table.shortcuts { border-collapse: collapse; width: 100%; font-size: 14px; }
+table.shortcuts td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+table.shortcuts td:first-child { width: 7em; white-space: nowrap; }
+/* ⌘K: the search window, near the top of the screen like a command bar. */
+dialog.modal.quick-search { width: min(560px, calc(100% - 24px)); margin-top: 12vh; }
+.quick-search .modal-body { gap: 8px; }
+.quick-search .modal-body > p:empty { display: none; }
+.quick-results { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; }
 
 /* Print -------------------------------------------------------------------
    An open card prints alone: its photo and every field it has, without the

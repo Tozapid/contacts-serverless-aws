@@ -26,6 +26,7 @@ The demo address book is English and made up. Everything on the page works: crea
 
 - **Cards** with every field of Apple and Google: name with pronunciation, maiden name, nickname, "file as", pronouns, work, phones, emails, addresses, websites, birthday (the year may be left out), dates, related people, messengers, social profiles, custom fields, favourites, notes and a photo (from a file or pasted from the clipboard, shrunk to 1024 points by the browser, opened full size on a click). The editor shows the fields an address book usually has (name, company and title, phones, emails, addresses, birthday, notes); the others are a click away in "Add field" and show by themselves once they have a value, or at once when the book fills them often (in a fifth of the 100 cards changed last).
 - **List** sorted by last name, by first name or by the last change.
+- **Keyboard shortcuts**: ⌘↩ / Ctrl+Enter saves the card being edited; ⌘K or / searches, N new contact, E edit, H history, C calendar, ? the list.
 - **Calendar** of every birthday and date by month, the ones Google and Apple show and the ones kept out of their calendars apart.
 - **History**: every create, save, delete, restore, import and sync keeps the whole card; the differences between versions, a restore of any version.
 - **Trash** in Settings: deleted cards as they were, searched across every field, restored with one click or deleted for good with their history.
@@ -92,7 +93,7 @@ The root of this repository is the module. It makes no providers: the caller pas
 
 ```hcl
 module "contacts" {
-  source = "git::https://github.com/Tozapid/contacts-serverless-aws.git?ref=v0.7.0"
+  source = "git::https://github.com/Tozapid/contacts-serverless-aws.git?ref=v0.8.0"
 
   providers = {
     aws        = aws

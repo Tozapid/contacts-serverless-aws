@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.8.0
+
+### Added
+
+- Keyboard shortcuts: ⌘↩ (Ctrl+Enter on Windows and Linux) saves the card being edited, also while typing in a field; ⌘K opens a search window over the page (the arrows choose a card, ↩ opens it, and with nothing typed it offers the cards changed last); / goes to the search of the list, N makes a new contact, E edits the open card, H opens its history, C the calendar; Esc leaves the editor as "Cancel" does and closes a card back to the list; and ? lists them all (also in the ⋯ menu). The single keys work when nothing is being typed and no window is open.
+
+### Changed
+
+- The family graph is a family tree: a row per generation, the older above, couples side by side, and the people further out as far as four steps of kinship (friends and colleagues of the open card only). The relation tells the generation, in its key or in the words of the card in any of the four languages ("мама", "прабабушка", "двоюродный дядя", "grandson"). Parents and children are joined from above, a couple with a double line, brothers and sisters without their parents by a bracket, the other kin by a dashed line and the rest by a dotted arc over the row; two people are joined once, whoever's card names whom, and under each name is who the person is to the open card. A person can be dragged and the lines follow; the wheel, a pinch or the buttons zoom ("Fit" shows the whole family, as on opening), and dragging the background pans. Photos are in the circles and the legend shows the lines drawn.
+
 ## v0.7.0
 
 ### Added

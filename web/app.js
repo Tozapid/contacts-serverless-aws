@@ -693,7 +693,160 @@
 
   // Page -------------------------------------------------------------------
 
+  // Keyboard shortcuts ----------------------------------------------------------
+  // ⌘↩ (Ctrl+Enter elsewhere) saves the card being edited, also while typing.
+  // The single keys work when nothing is being typed and no window is open.
+  // "?" lists them all.
+  const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  const MOD = MAC ? "⌘" : "Ctrl";
+  const SHORTCUTS = [
+    [MOD + " ↩", "keys.save"],
+    [MOD + " K", "keys.quickSearch"],
+    ["/", "keys.search"],
+    ["N", "keys.new"],
+    ["E", "keys.edit"],
+    ["H", "keys.history"],
+    ["C", "keys.calendar"],
+    ["Esc", "keys.back"],
+    ["?", "keys.help"],
+  ];
+  let shortcutsOn = false;
+
+  function typing(target) {
+    return Boolean(target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)));
+  }
+
+  function windowOpen() {
+    return Boolean(document.querySelector("dialog[open], .dialog-wrap"));
+  }
+
+  function showShortcuts() {
+    const view = dialog(t("keys.title"));
+    view.fill(el("table", { class: "shortcuts" }, el("tbody", {}, SHORTCUTS.map(([keys, text]) => el("tr", {}, [
+      el("td", {}, keys.split(" ").map((key) => el("kbd", {}, key))),
+      el("td", {}, t(text)),
+    ])))));
+  }
+
+  function onShortcut(event) {
+    if (!state.me || event.defaultPrevented || event.isComposing) return;
+    const mod = MAC ? event.metaKey : event.ctrlKey;
+    if (mod && event.key === "Enter") {
+      // The editor's own submit: the same checks and the same draft handling.
+      const form = !windowOpen() && detailNode && detailNode.querySelector("form.editor");
+      if (form) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+      return;
+    }
+    if (mod && event.key.toLowerCase() === "k") {
+      if (windowOpen()) return;
+      event.preventDefault();
+      showQuickSearch();
+      return;
+    }
+    // Esc leaves the editor as "Cancel" does, and closes a card (or what is
+    // open on the right) back to the list. A window closes by itself; a
+    // field that handles Esc itself (the search, a person picker) keeps it.
+    if (event.key === "Escape") {
+      if (windowOpen() || event.target.closest?.(".list-pane")) return;
+      const cancel = detailNode?.querySelector("form.editor .editor-cancel");
+      if (cancel) {
+        event.preventDefault();
+        cancel.click();
+      } else if (route().view !== "none") {
+        event.preventDefault();
+        go("#");
+      }
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.altKey || typing(event.target) || windowOpen()) return;
+    const current = route();
+    const card = current.view === "card" && state.contacts.get(current.id);
+    const actions = {
+      "/": () => listNode?.querySelector("input.search")?.focus(),
+      n: () => go("#/new"),
+      e: () => card && go(`#/c/${card.id}/edit`),
+      h: () => card && go(`#/c/${card.id}/history`),
+      c: () => showCalendar(),
+      "?": () => showShortcuts(),
+    };
+    const action = actions[event.key.length === 1 ? event.key.toLowerCase() : ""] || actions[event.key];
+    if (!action) return;
+    event.preventDefault();
+    action();
+  }
+
+  // ⌘K: a search window over the page, the search of the list in it. The
+  // arrows choose a card, ↩ opens it; with nothing typed it offers the cards
+  // changed last.
+  const QUICK_MAX = 10;
+
+  function showQuickSearch() {
+    const view = dialog(t("keys.search"));
+    view.node.classList.add("quick-search");
+    let chosen = 0;
+    let found = [];
+    const list = el("ul", { class: "contacts quick-results", role: "listbox" });
+    const hint = el("p", { class: "muted small" });
+    const input = el("input", {
+      type: "search",
+      class: "search",
+      placeholder: t("search.placeholder"),
+      "aria-label": t("search.placeholder"),
+      autocomplete: "off",
+      oninput: () => {
+        chosen = 0;
+        draw();
+      },
+      onkeydown: (event) => {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          if (found.length) chosen = (chosen + (event.key === "ArrowDown" ? 1 : found.length - 1)) % found.length;
+          draw();
+        } else if (event.key === "Enter" && !event.isComposing) {
+          event.preventDefault();
+          if (found[chosen]) open(found[chosen]);
+        }
+      },
+    });
+    const open = (contact) => {
+      view.close();
+      go("#/c/" + contact.id);
+    };
+    function draw() {
+      const query = input.value.trim();
+      found = (query ? search(query) : Array.from(state.contacts.values()).sort(byModified)).slice(0, QUICK_MAX);
+      hint.textContent = query ? "" : t("keys.recent");
+      fill(list, found.length ? found.map((contact, index) => {
+        const row = contactRow(contact, index === chosen);
+        const link = row.firstChild;
+        link.setAttribute("role", "option");
+        link.setAttribute("aria-selected", String(index === chosen));
+        link.onclick = (event) => {
+          event.preventDefault();
+          open(contact);
+        };
+        link.onmousemove = () => {
+          if (chosen === index) return;
+          chosen = index;
+          draw();
+        };
+        return row;
+      }) : [el("li", { class: "muted small" }, t("search.none"))]);
+      list.querySelector(".active")?.scrollIntoView({ block: "nearest" });
+    }
+    view.fill([input, hint, list]);
+    draw();
+    input.focus();
+  }
+
   function render() {
+    if (!shortcutsOn) {
+      document.addEventListener("keydown", onShortcut);
+      shortcutsOn = true;
+    }
     listNode = el("aside", { class: "list-pane" });
     detailNode = el("section", { class: "detail-pane", "aria-live": "polite" });
     appNode = el("div", { class: "app" }, [
@@ -737,6 +890,8 @@
           if (first) go("#/c/" + first.id);
         }
         if (event.key === "Escape" && state.query) {
+          // Handled here: the shortcuts leave the open card alone.
+          event.preventDefault();
           state.query = "";
           scheduleHistorySearch();
           renderList();
@@ -822,6 +977,7 @@
               el("button", { type: "button", onclick: (event) => { event.target.closest("details").open = false; go("#/groups"); } }, t("groups.title")),
               el("button", { type: "button", onclick: (event) => { event.target.closest("details").open = false; go("#/duplicates"); } }, t("dup.title")),
               el("button", { type: "button", onclick: (event) => { event.target.closest("details").open = false; showAccount("trash"); } }, t("trash.title")),
+              el("button", { type: "button", onclick: (event) => { event.target.closest("details").open = false; showShortcuts(); } }, t("keys.title")),
             ]),
           ]),
         ]),
@@ -1152,61 +1308,153 @@
     return found.sort((a, b) => sortKey(a.from).localeCompare(sortKey(b.from), language));
   }
 
-  // The family graph around a card: its relatives and theirs, two steps out,
-  // with the relation written on each arrow ("A → B: мама" is what A's card
-  // says B is). A click on a person opens their card.
+  // The family graph around a card, as a family tree: a row per generation,
+  // the older above, couples side by side. A relation says how far up or
+  // down the other person is (relationKind): "мама" one generation up,
+  // "внук" two down, "муж" and "сестра" the same. Lines follow the kind:
+  // parents to children from above, a double line between a couple, a
+  // bracket over brothers and sisters, a dashed line for the other kin and a
+  // dotted one for the rest (friends, colleagues). Two people are joined
+  // once, whoever's card names whom. A person can be dragged, the lines
+  // follow; the wheel, a pinch or the buttons zoom, the background pans; a
+  // click on a person opens their card.
+  const KIN_DEPTH = 4;
+  const RELATION_KINDS = [
+    // [kind, generations up (-) or down (+), words]; keys of fields.js first.
+    ["parent", -1, /(?:^|[\s-])(mother|father|parent|мам|мать|матер|пап|отец|отч|мачех|родител|mom|mum|dad|step-?(mother|father)|m[eè]re|p[eè]re|madre|padre|mamma|papà|papa)/],
+    ["child", 1, /(?:^|[\s-])(child|son|daughter|сын|доч|ребён|ребен|дет|пасын|падчер|kid|fils|fille|figli|figlio|figlia|bambin)/],
+    ["spouse", 0, /(?:^|[\s-])(spouse|husband|wife|partner|муж(?=$|[\s-])|жена|супруг|партн|невест|жених|épou|epou|mari(?=$|[\s-])|femme|conjoint|marit|moglie|compagn|fianc)/],
+    ["sibling", 0, /(brother|sister|sibling|брат|сестр|frère|frere|sœur|soeur|fratell|sorell|cousin|cugin)/],
+    ["parent", -1, /(?:^|[\s-])(тёт|тет|дяд|aunt|uncle|tante|oncle|zia|zio)/, "far"],
+    ["child", 1, /(?:^|[\s-])(племян|nephew|niece|neveu|nièce|niece)/, "far"],
+    ["parent", -2, /(бабушк|бабул|дедушк|^дед|grand-?(mother|father|ma|pa|parent)|grand-m[eè]re|grand-p[eè]re|nonn)/, "far"],
+    ["child", 2, /(внук|внуч|grand-?(son|daughter|child|kid)|petit-(fils|fille|enfant)|nipot)/, "far"],
+  ];
+
+  function relationKind(label) {
+    const words = [label, labelText(label)].map((text) => String(text || "").trim().toLocaleLowerCase(language)).filter(Boolean);
+    for (const [kind, step, pattern, far] of RELATION_KINDS) {
+      const text = words.find((word) => pattern.test(word));
+      if (!text) continue;
+      // "прабабушка", "great-grandson": one generation further for each.
+      const greats = (text.match(/пра|great-?/g) || []).length;
+      return { kind, step: step + Math.sign(step) * greats, far: Boolean(far) || greats > 0 };
+    }
+    return { kind: "other", step: 0, far: false };
+  }
+
   function showGraph(id) {
     const center = state.contacts.get(id);
-    const depth = new Map([[id, 0]]);
-    const parent = new Map();
-    const edges = new Map();
+    const view = dialog(t("graph.title", { name: displayName(center) }));
+    view.node.classList.add("graph-dialog");
+
+    // The people: kin as far as KIN_DEPTH steps, the rest only when they are
+    // linked to the card itself. A link is kept once per pair of people.
+    const generation = new Map([[id, 0]]);
+    const links = new Map();
+    const pairKey = (a, b) => [a, b].sort().join("|");
+    const addLink = (from, to, label) => {
+      const relation = relationKind(label);
+      const key = pairKey(from, to);
+      const known = links.get(key);
+      // A link that tells the generations apart wins over one that does not.
+      if (!known || (known.kind === "other" && relation.kind !== "other")) links.set(key, { from, to, label, ...relation });
+      return relation;
+    };
     let ring = [id];
-    for (let step = 1; step <= 2; step += 1) {
+    for (let step = 1; step <= KIN_DEPTH && ring.length; step += 1) {
       const next = [];
       ring.forEach((node) => {
-        const neighbours = [
-          ...linksOf(state.contacts.get(node)).map((entry) => [node, entry.contact, entry.label]),
-          ...incomingOf(node).map(({ from, label }) => [from.id, node, label]),
+        const around = [
+          ...linksOf(state.contacts.get(node)).map((entry) => ({ from: node, to: entry.contact, label: entry.label })),
+          ...incomingOf(node).map(({ from, label }) => ({ from: from.id, to: node, label })),
         ];
-        neighbours.forEach(([from, to, label]) => {
-          edges.set(`${from}>${to}>${label}`, { from, to, label: labelText(label) || "" });
+        around.forEach(({ from, to, label }) => {
+          const relation = relationKind(label);
           const other = from === node ? to : from;
-          if (!depth.has(other)) {
-            depth.set(other, step);
-            parent.set(other, node);
-            next.push(other);
-          }
+          if (relation.kind === "other" && node !== id) return;
+          addLink(from, to, label);
+          if (generation.has(other)) return;
+          // "to is <label> of from": its generation is from's plus the step.
+          generation.set(other, from === node ? generation.get(node) + relation.step : generation.get(node) - relation.step);
+          if (relation.kind !== "other") next.push(other);
         });
       });
       ring = next;
     }
-    // The last ring's own links to each other are drawn too.
-    depth.forEach((_, node) => linksOf(state.contacts.get(node)).forEach((entry) => {
-      if (depth.has(entry.contact)) edges.set(`${node}>${entry.contact}>${entry.label}`, { from: node, to: entry.contact, label: labelText(entry.label) || "" });
-    }));
-
-    const view = dialog(t("graph.title", { name: displayName(center) }));
-    view.node.classList.add("graph-dialog");
-    if (depth.size < 2) {
+    if (generation.size < 2) {
       view.fill(el("p", { class: "muted" }, t("graph.empty")));
       return;
     }
-    // Rings around the card: the relatives evenly on the first, theirs near
-    // the one who links them, on the second.
-    const place = new Map([[id, { x: 0, y: 0, angle: 0 }]]);
-    const first = [...depth].filter(([, d]) => d === 1).map(([node]) => node);
-    first.forEach((node, index) => {
-      const angle = (index / first.length) * 2 * Math.PI - Math.PI / 2;
-      place.set(node, { x: 190 * Math.cos(angle), y: 190 * Math.sin(angle), angle });
-    });
-    const slice = (2 * Math.PI) / Math.max(first.length, 1);
-    first.forEach((node) => {
-      const children = [...depth].filter(([other, d]) => d === 2 && parent.get(other) === node).map(([other]) => other);
-      children.forEach((child, index) => {
-        const angle = place.get(node).angle + (children.length > 1 ? (index / (children.length - 1) - 0.5) * slice * 0.8 : 0);
-        place.set(child, { x: 360 * Math.cos(angle), y: 360 * Math.sin(angle), angle });
+
+    // Rows from the oldest generation down; a couple is one unit of a row.
+    const kinds = (a, b) => (links.get(pairKey(a, b)) || {}).kind;
+    const rows = new Map();
+    [...generation.entries()].forEach(([node, gen]) => rows.set(gen, [...(rows.get(gen) || []), node]));
+    const levels = [...rows.keys()].sort((a, b) => a - b);
+    const unitsOf = new Map();
+    levels.forEach((gen) => {
+      const units = [];
+      const placed = new Set();
+      rows.get(gen).forEach((node) => {
+        if (placed.has(node)) return;
+        const unit = [node];
+        placed.add(node);
+        rows.get(gen).forEach((other) => {
+          if (!placed.has(other) && kinds(node, other) === "spouse" && unit.length < 3) {
+            unit.push(other);
+            placed.add(other);
+          }
+        });
+        units.push(unit);
       });
+      unitsOf.set(gen, units);
     });
+
+    // Order within a row by where a person's kin above and below stand, a
+    // few sweeps down and up.
+    const NODE = 150;
+    const GAP = 36;
+    const ROW = 150;
+    const x = new Map();
+    const unitWidth = (unit) => unit.length * NODE + (unit.length - 1) * 12;
+    const spread = (units) => {
+      let left = 0;
+      units.forEach((unit) => {
+        unit.forEach((node, index) => x.set(node, left + index * (NODE + 12) + NODE / 2));
+        left += unitWidth(unit) + GAP;
+      });
+    };
+    levels.forEach((gen) => spread(unitsOf.get(gen)));
+    const kinAt = (node, gen) => [...links.values()]
+      .filter((link) => (link.from === node || link.to === node) && link.kind !== "other")
+      .map((link) => (link.from === node ? link.to : link.from))
+      .filter((other) => generation.get(other) === gen);
+    const placeRow = (gen, toward) => {
+      const units = unitsOf.get(gen);
+      const wanted = units.map((unit) => {
+        const xs = unit.flatMap((node) => kinAt(node, toward).map((other) => x.get(other)));
+        return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+      });
+      const order = units.map((unit, index) => ({ unit, want: wanted[index] ?? x.get(unit[0]) }));
+      order.sort((a, b) => a.want - b.want);
+      unitsOf.set(gen, order.map((entry) => entry.unit));
+      // Each unit as near its kin as the row allows, left to right.
+      let left = -Infinity;
+      order.forEach(({ unit, want }) => {
+        let start = Math.max(want - unitWidth(unit) / 2, left);
+        if (!Number.isFinite(start)) start = 0;
+        unit.forEach((node, index) => x.set(node, start + index * (NODE + 12) + NODE / 2));
+        left = start + unitWidth(unit) + GAP;
+      });
+    };
+    for (let sweep = 0; sweep < 3; sweep += 1) {
+      levels.slice(1).forEach((gen, index) => placeRow(gen, levels[index]));
+      levels.slice(0, -1).reverse().forEach((gen) => placeRow(gen, levels[levels.indexOf(gen) + 1]));
+    }
+    // Where each person is; a drag moves them and the lines follow.
+    const pos = new Map([...generation.keys()].map((node) => [node, { x: x.get(node), y: (generation.get(node) - levels[0]) * ROW }]));
+
     const svgNs = "http://www.w3.org/2000/svg";
     const svg = (tag, attrs, children) => {
       const node = document.createElementNS(svgNs, tag);
@@ -1214,68 +1462,266 @@
       [].concat(children || []).forEach((child) => node.append(child.nodeType ? child : document.createTextNode(String(child))));
       return node;
     };
-    const points = [...place.values()];
-    const pad = 70;
-    const minX = Math.min(...points.map((p) => p.x)) - pad - 40;
-    const maxX = Math.max(...points.map((p) => p.x)) + pad + 40;
-    const minY = Math.min(...points.map((p) => p.y)) - pad;
-    const maxY = Math.max(...points.map((p) => p.y)) + pad + 20;
-    const radius = 28;
-    const root = svg("svg", { viewBox: `${minX} ${minY} ${maxX - minX} ${maxY - minY}`, class: "graph", role: "img", "aria-label": t("graph.title", { name: displayName(center) }) }, [
-      svg("defs", {}, svg("marker", { id: "graph-arrow", viewBox: "0 0 10 10", refX: "10", refY: "5", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse" }, svg("path", { d: "M0 0L10 5L0 10z", class: "graph-arrow" }))),
-    ]);
-    // Two arrows between the same people (each names the other) bend apart.
-    const pairs = new Map();
-    edges.forEach((edge) => {
-      const key = [edge.from, edge.to].sort().join("|");
-      pairs.set(key, (pairs.get(key) || 0) + 1);
+    const radius = 30;
+    const root = svg("svg", { class: "graph", role: "img", "aria-label": t("graph.title", { name: displayName(center) }) });
+    const scene = svg("g", { class: "graph-scene" });
+    const edgesLayer = svg("g", { class: "graph-edges" });
+    const nodesLayer = svg("g", {});
+    scene.append(edgesLayer, nodesLayer);
+    root.append(scene);
+    const describe = (link) => `${displayName(state.contacts.get(link.to))} — ${labelText(link.label) || "?"} (${displayName(state.contacts.get(link.from))})`;
+
+    // Parents and children: from the couple (or the parent) down to a bus
+    // over the children, and down to each child.
+    const parentsOf = new Map();
+    links.forEach((link) => {
+      if (link.far || (link.kind !== "parent" && link.kind !== "child")) return;
+      const [older, younger] = generation.get(link.from) < generation.get(link.to) ? [link.from, link.to] : [link.to, link.from];
+      if (generation.get(younger) - generation.get(older) !== 1) return;
+      link.drawn = true;
+      parentsOf.set(younger, [...(parentsOf.get(younger) || []), older]);
     });
-    const seen = new Map();
-    edges.forEach((edge) => {
-      const a = place.get(edge.from);
-      const b = place.get(edge.to);
-      if (!a || !b) return;
-      const key = [edge.from, edge.to].sort().join("|");
-      const nth = seen.get(key) || 0;
-      seen.set(key, nth + 1);
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const length = Math.hypot(dx, dy) || 1;
-      const ux = dx / length;
-      const uy = dy / length;
-      const bend = pairs.get(key) > 1 ? (nth % 2 ? -1 : 1) * 24 * (edge.from < edge.to ? 1 : -1) : 0;
-      const start = { x: a.x + ux * radius, y: a.y + uy * radius };
-      const end = { x: b.x - ux * (radius + 3), y: b.y - uy * (radius + 3) };
-      const mid = { x: (start.x + end.x) / 2 - uy * bend, y: (start.y + end.y) / 2 + ux * bend };
-      root.append(svg("path", { d: `M${start.x} ${start.y} Q${mid.x} ${mid.y} ${end.x} ${end.y}`, class: "graph-edge", "marker-end": "url(#graph-arrow)" }));
-      if (edge.label) {
-        const label = { x: (start.x + 2 * mid.x + end.x) / 4, y: (start.y + 2 * mid.y + end.y) / 4 };
-        const text = edge.label.length > 18 ? edge.label.slice(0, 17) + "…" : edge.label;
-        root.append(svg("g", { class: "graph-label" }, [
-          svg("rect", { x: label.x - text.length * 3.6 - 6, y: label.y - 10, width: text.length * 7.2 + 12, height: 20, rx: 10 }),
-          svg("text", { x: label.x, y: label.y + 4, "text-anchor": "middle" }, text),
-        ]));
+    const families = new Map();
+    parentsOf.forEach((parents, child) => {
+      const key = [...new Set(parents)].sort().join("+");
+      families.set(key, [...(families.get(key) || []), child]);
+    });
+    const shareParents = (a, b) => (parentsOf.get(a) || []).some((parent) => (parentsOf.get(b) || []).includes(parent));
+    const drawn = new Set();
+    const shapes = [];
+    families.forEach((children, key) => {
+      const parents = key.split("+");
+      drawn.add("kin");
+      const titleText = children.map((child) => [...links.values()].filter((link) => link.drawn && [link.from, link.to].includes(child)).map(describe).join("\n")).join("\n");
+      const path = svg("path", { class: "graph-edge kin" }, svg("title", {}, titleText));
+      edgesLayer.append(path);
+      shapes.push(() => {
+        const px = parents.reduce((sum, node) => sum + pos.get(node).x, 0) / parents.length;
+        const py = parents.reduce((sum, node) => sum + pos.get(node).y, 0) / parents.length + (parents.length > 1 ? 0 : radius);
+        const tops = children.map((child) => pos.get(child));
+        const busY = Math.min(...tops.map((point) => point.y)) - radius - 26;
+        const xs = tops.map((point) => point.x);
+        path.setAttribute("d", `M${px} ${py} V${busY} M${Math.min(px, ...xs)} ${busY} H${Math.max(px, ...xs)} ` + tops.map((point) => `M${point.x} ${busY} V${point.y - radius}`).join(" "));
+      });
+    });
+
+    links.forEach((link) => {
+      if (link.drawn) return;
+      const sameRow = generation.get(link.from) === generation.get(link.to);
+      if (link.kind === "sibling" && sameRow && shareParents(link.from, link.to)) return;
+      const style = link.kind === "spouse" && sameRow ? "couple" : link.kind === "sibling" && sameRow ? "sibling" : link.kind === "other" ? "other" : "far";
+      drawn.add(style);
+      const path = svg("path", { class: "graph-edge " + style }, svg("title", {}, describe(link)));
+      edgesLayer.append(path);
+      // A link of the open card is told under the other person's name.
+      const text = link.from === id || link.to === id ? "" : labelText(link.label) || "";
+      let label = null;
+      if (text && style !== "couple" && style !== "sibling") {
+        const shown = text.length > 16 ? text.slice(0, 15) + "…" : text;
+        label = svg("g", { class: "graph-label" }, [
+          svg("rect", { x: -shown.length * 3.4 - 6, y: -9, width: shown.length * 6.8 + 12, height: 18, rx: 9 }),
+          svg("text", { y: 4, "text-anchor": "middle" }, shown),
+          svg("title", {}, describe(link)),
+        ]);
+        edgesLayer.append(label);
       }
+      shapes.push(() => {
+        const a = pos.get(link.from);
+        const b = pos.get(link.to);
+        const [left, right] = a.x <= b.x ? [a, b] : [b, a];
+        const level = Math.abs(a.y - b.y) < 1;
+        if (style === "couple") {
+          // A couple: a double line between the two, at any angle.
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const length = Math.hypot(dx, dy) || 1;
+          const ux = dx / length;
+          const uy = dy / length;
+          const [sx, sy, ex, ey] = [a.x + ux * radius, a.y + uy * radius, b.x - ux * radius, b.y - uy * radius];
+          path.setAttribute("d", [3, -3].map((side) => `M${sx - uy * side} ${sy + ux * side} L${ex - uy * side} ${ey + ux * side}`).join(" "));
+          return;
+        }
+        if (style === "sibling" && level) {
+          // Brothers and sisters whose parents are not here: a bracket above.
+          const over = a.y - radius - 18;
+          path.setAttribute("d", `M${left.x} ${left.y - radius} V${over} H${right.x} V${right.y - radius}`);
+          return;
+        }
+        // The rest, with the relation on it: in one row an arc over the
+        // people between, from the top of one to the top of the other;
+        // between rows a line from edge to edge.
+        let start;
+        let end;
+        let mid;
+        if (level) {
+          start = { x: a.x, y: a.y - radius };
+          end = { x: b.x, y: b.y - radius };
+          mid = { x: (a.x + b.x) / 2, y: a.y - radius - 34 - Math.min(40, Math.abs(b.x - a.x) / 12) };
+        } else {
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const length = Math.hypot(dx, dy) || 1;
+          start = { x: a.x + (dx / length) * radius, y: a.y + (dy / length) * radius };
+          end = { x: b.x - (dx / length) * radius, y: b.y - (dy / length) * radius };
+          mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+        }
+        path.setAttribute("d", `M${start.x} ${start.y} Q${mid.x} ${mid.y} ${end.x} ${end.y}`);
+        if (label) label.setAttribute("transform", `translate(${(start.x + 2 * mid.x + end.x) / 4} ${(start.y + 2 * mid.y + end.y) / 4})`);
+      });
     });
-    place.forEach((point, node) => {
+
+    // The view: scale and shift of the whole scene (zoom with the wheel, a
+    // pinch or the buttons; pan by dragging the background).
+    const viewState = { scale: 1, tx: 0, ty: 0 };
+    const applyView = () => scene.setAttribute("transform", `translate(${viewState.tx} ${viewState.ty}) scale(${viewState.scale})`);
+    const toScene = (clientX, clientY) => {
+      const box = root.getBoundingClientRect();
+      return { x: (clientX - box.left - viewState.tx) / viewState.scale, y: (clientY - box.top - viewState.ty) / viewState.scale };
+    };
+    const zoomAt = (factor, clientX, clientY) => {
+      const box = root.getBoundingClientRect();
+      const px = clientX - box.left;
+      const py = clientY - box.top;
+      const scale = Math.min(3, Math.max(0.2, viewState.scale * factor));
+      viewState.tx = px - ((px - viewState.tx) * scale) / viewState.scale;
+      viewState.ty = py - ((py - viewState.ty) * scale) / viewState.scale;
+      viewState.scale = scale;
+      applyView();
+    };
+    const fit = () => {
+      const box = root.getBoundingClientRect();
+      const points = [...pos.values()];
+      const minX = Math.min(...points.map((point) => point.x)) - NODE / 2 - 10;
+      const maxX = Math.max(...points.map((point) => point.x)) + NODE / 2 + 10;
+      const minY = Math.min(...points.map((point) => point.y)) - radius - 70;
+      const maxY = Math.max(...points.map((point) => point.y)) + radius + 50;
+      viewState.scale = Math.min(1.2, Math.max(0.2, Math.min(box.width / (maxX - minX), box.height / (maxY - minY))));
+      viewState.tx = (box.width - (maxX - minX) * viewState.scale) / 2 - minX * viewState.scale;
+      viewState.ty = (box.height - (maxY - minY) * viewState.scale) / 2 - minY * viewState.scale;
+      applyView();
+    };
+
+    // Under each name: who the person is to the open card, as one of the
+    // two cards says it.
+    const INVERSE = { parent: "graph.rel.child", child: "graph.rel.parent", spouse: "graph.rel.spouse", sibling: "graph.rel.sibling" };
+    const roleOf = (node) => {
+      const link = links.get(pairKey(id, node));
+      if (!link) return "";
+      if (link.from === id) return labelText(link.label) || "";
+      return INVERSE[link.kind] && !link.far ? t(INVERSE[link.kind]) : "← " + (labelText(link.label) || "");
+    };
+    const short = (text, max) => (text.length > max ? text.slice(0, max - 1) + "…" : text);
+    const groups = [];
+    const draw = () => {
+      shapes.forEach((shape) => shape());
+      groups.forEach(({ node, group }) => group.setAttribute("transform", `translate(${pos.get(node).x} ${pos.get(node).y})`));
+    };
+    generation.forEach((_, node) => {
       const contact = state.contacts.get(node);
       const name = displayName(contact);
-      const group = svg("g", { class: "graph-node" + (node === id ? " center" : ""), tabindex: "0", role: "link", "aria-label": name, transform: `translate(${point.x} ${point.y})` }, [
+      const clip = "graph-clip-" + node;
+      const role = node === id ? "" : roleOf(node);
+      const group = svg("g", { class: "graph-node" + (node === id ? " center" : ""), tabindex: "0", role: "link", "aria-label": name }, [
+        svg("title", {}, [name, role].filter(Boolean).join(" — ")),
         svg("circle", { r: radius }),
-        svg("text", { class: "graph-initials", y: 5, "text-anchor": "middle" }, initials(contact)),
-        svg("text", { class: "graph-name", y: radius + 18, "text-anchor": "middle" }, name.length > 22 ? name.slice(0, 21) + "…" : name),
-      ]);
+        contact.photo
+          ? [svg("clipPath", { id: clip }, svg("circle", { r: radius - 2 })), svg("image", { href: contact.photo, x: -radius + 2, y: -radius + 2, width: (radius - 2) * 2, height: (radius - 2) * 2, "clip-path": `url(#${clip})`, preserveAspectRatio: "xMidYMid slice" })]
+          : svg("text", { class: "graph-initials", y: 5, "text-anchor": "middle" }, initials(contact)),
+        svg("text", { class: "graph-name", y: radius + 18, "text-anchor": "middle" }, short(name, 20)),
+        role ? svg("text", { class: "graph-role", y: radius + 34, "text-anchor": "middle" }, short(role, 22)) : null,
+      ].flat().filter(Boolean));
       const open = () => {
         view.close();
         go("#/c/" + node);
       };
-      group.addEventListener("click", open);
       group.addEventListener("keydown", (event) => {
         if (event.key === "Enter") open();
       });
-      root.append(group);
+      group.dataset.node = node;
+      nodesLayer.append(group);
+      groups.push({ node, group });
     });
-    view.fill([el("p", { class: "muted small" }, t("graph.hint")), el("div", { class: "graph-wrap" }, root)]);
+
+    // Pointers: on a person a drag moves them and a press opens the card; on
+    // the background a drag pans; two fingers pinch to zoom.
+    const pointers = new Map();
+    let gesture = null;
+    root.addEventListener("pointerdown", (event) => {
+      if (event.button !== undefined && event.button > 0) return;
+      root.setPointerCapture(event.pointerId);
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (pointers.size === 2) {
+        const [a, b] = [...pointers.values()];
+        gesture = { kind: "pinch", distance: Math.hypot(a.x - b.x, a.y - b.y) };
+        return;
+      }
+      const target = event.target.closest && event.target.closest(".graph-node");
+      const node = target ? target.dataset.node : null;
+      const at = toScene(event.clientX, event.clientY);
+      gesture = node
+        ? { kind: "node", node, group: target, dx: at.x - pos.get(node).x, dy: at.y - pos.get(node).y, startX: event.clientX, startY: event.clientY, moved: false }
+        : { kind: "pan", startX: event.clientX, startY: event.clientY, tx: viewState.tx, ty: viewState.ty };
+    });
+    root.addEventListener("pointermove", (event) => {
+      if (!pointers.has(event.pointerId) || !gesture) return;
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (gesture.kind === "pinch" && pointers.size === 2) {
+        const [a, b] = [...pointers.values()];
+        const distance = Math.hypot(a.x - b.x, a.y - b.y);
+        zoomAt(distance / gesture.distance, (a.x + b.x) / 2, (a.y + b.y) / 2);
+        gesture.distance = distance;
+      } else if (gesture.kind === "node") {
+        if (!gesture.moved && Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) < 4) return;
+        gesture.moved = true;
+        gesture.group.classList.add("dragging");
+        const at = toScene(event.clientX, event.clientY);
+        pos.set(gesture.node, { x: at.x - gesture.dx, y: at.y - gesture.dy });
+        draw();
+      } else if (gesture.kind === "pan") {
+        viewState.tx = gesture.tx + event.clientX - gesture.startX;
+        viewState.ty = gesture.ty + event.clientY - gesture.startY;
+        root.classList.add("panning");
+        applyView();
+      }
+    });
+    const release = (event) => {
+      pointers.delete(event.pointerId);
+      if (!gesture) return;
+      if (gesture.kind === "node") {
+        gesture.group.classList.remove("dragging");
+        if (!gesture.moved && event.type === "pointerup") {
+          view.close();
+          go("#/c/" + gesture.node);
+        }
+      }
+      root.classList.remove("panning");
+      gesture = null;
+    };
+    root.addEventListener("pointerup", release);
+    root.addEventListener("pointercancel", release);
+    root.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      zoomAt(Math.exp(-event.deltaY * (event.deltaMode === 1 ? 0.05 : 0.0015)), event.clientX, event.clientY);
+    }, { passive: false });
+
+    draw();
+    const legend = el("div", { class: "graph-legend muted small" }, [
+      ["kin", "graph.legend.kin"], ["couple", "graph.legend.couple"], ["sibling", "graph.legend.sibling"], ["far", "graph.legend.far"], ["other", "graph.legend.other"],
+    ].filter(([kind]) => drawn.has(kind))
+      .map(([kind, text]) => el("span", {}, [svg("svg", { width: "28", height: "10", class: "graph-key" }, svg("path", { class: "graph-edge " + kind, d: kind === "couple" ? "M2 2H26M2 8H26" : "M2 5H26" })), t(text)])));
+    const zoomButton = (text, title, onclick) => el("button", { type: "button", class: "ghost", title, "aria-label": title, onclick }, text);
+    const middle = () => {
+      const box = root.getBoundingClientRect();
+      return [box.left + box.width / 2, box.top + box.height / 2];
+    };
+    const tools = el("div", { class: "graph-tools" }, [
+      zoomButton("+", t("graph.zoomIn"), () => zoomAt(1.25, ...middle())),
+      zoomButton("−", t("graph.zoomOut"), () => zoomAt(0.8, ...middle())),
+      zoomButton(t("graph.fit"), t("graph.fit"), fit),
+    ]);
+    const wrap = el("div", { class: "graph-wrap" }, [root, tools]);
+    view.fill([el("p", { class: "muted small" }, t("graph.hint")), legend, wrap]);
+    fit();
   }
 
   function link(url, text) {
@@ -1663,7 +2109,8 @@
         error,
         el("button", {
           type: "button",
-          class: "ghost",
+          // Esc presses it too (onShortcut).
+          class: "ghost editor-cancel",
           onclick: async () => {
             if (await discard()) go(contact ? "#/c/" + contact.id : "#");
           },
@@ -1820,7 +2267,10 @@
       onfocus: () => suggest(),
       onblur: () => setTimeout(() => list.classList.add("hidden"), 150),
       onkeydown: (event) => {
-        if (event.key === "Escape") list.classList.add("hidden");
+        if (event.key === "Escape" && !list.classList.contains("hidden")) {
+          event.preventDefault();
+          list.classList.add("hidden");
+        }
         if (event.key === "Enter" && !list.classList.contains("hidden")) {
           event.preventDefault();
           list.querySelector("button")?.dispatchEvent(new MouseEvent("mousedown"));

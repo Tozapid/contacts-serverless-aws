@@ -49,6 +49,8 @@ locals {
   # are a parameter of their own under the prefix.
   icloud_password_prefix = "/${local.name}/icloud"
   icloud_function        = "${local.name}-icloud"
+  # The full export (backup.tf).
+  backup_function = "${local.name}-backup"
 
   csp = join("; ", [
     "default-src 'self'",

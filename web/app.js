@@ -221,8 +221,20 @@
     return (contact.phones || []).some((phone) => phone.value && phone.value.trim());
   }
 
+  // By last name, by first name, or the last changed first.
+  const SORTS = ["last", "first", "modified"];
+
   function sortBy() {
-    return stored(SORT_KEY) === "first" ? "first" : "last";
+    const value = stored(SORT_KEY);
+    return SORTS.includes(value) ? value : "last";
+  }
+
+  function byModified(a, b) {
+    return String(b.modified || "").localeCompare(String(a.modified || "")) || sortKey(a).localeCompare(sortKey(b), language);
+  }
+
+  function byName(a, b) {
+    return sortKey(a).localeCompare(sortKey(b), language);
   }
 
   // The name as the settings order it; a card without a name is shown by its
@@ -301,12 +313,13 @@
   function valueText(key, value) {
     if (value == null || value === "" || (Array.isArray(value) && !value.length)) return "";
     if (key === "starred") return value ? t("contact.starred") : "";
+    if (key === "hidden") return value ? t("hidden.badge") : "";
     if (key === "birthday" || key === "hidden_birthday") return dateText(value);
     if (key === "photo") return t("history.photo");
     if (!Array.isArray(value)) return String(value);
     return value.map((entry) => {
       if (key === "addresses") return `${labelText(entry.label)}: ${addressLines(entry).replace(/\n/g, ", ")}`;
-      if (key === "dates") return `${labelText(entry.label)}: ${dateText(entry.value)}`;
+      if (key === "dates") return `${labelText(entry.label)}: ${dateText(entry.value)}${entry.hidden ? " (" + t("birthday.hiddenMark") + ")" : ""}`;
       if (key === "social") return `${entry.service || ""}: ${[entry.user, entry.url].filter(Boolean).join(" ")}`;
       if (key === "im") return `${entry.service || labelText(entry.label)}: ${entry.value}`;
       return `${labelText(entry.label)}: ${entry.value}`;
@@ -337,7 +350,7 @@
     return wanted.some((want) => numbers.includes(want));
   }
 
-  const SKIPPED = new Set(["photo", "uid", "starred", "id", "etag", "created", "modified"]);
+  const SKIPPED = new Set(["photo", "uid", "starred", "hidden", "id", "etag", "created", "modified"]);
 
   function haystack(contact) {
     const words = [];
@@ -381,20 +394,26 @@
   // The query in the other layout that found something, for the list to say so.
   let otherLayout = "";
 
+  // The variant of the query that finds the card, or undefined.
+  function queryHit(variants, contact) {
+    const { text, numbers } = haystack(contact);
+    return variants.find(({ query: whole, words }) => phoneMatch(whole, numbers) || words.every((word) => text.includes(word) || phoneMatch(word, numbers)));
+  }
+
   function search(query) {
     const variants = queryVariants(query);
     const found = [];
     otherLayout = "";
     state.contacts.forEach((contact) => {
-      const { text, numbers } = haystack(contact);
-      const hit = variants.find(({ query: whole, words }) => phoneMatch(whole, numbers) || words.every((word) => text.includes(word) || phoneMatch(word, numbers)));
+      const hit = queryHit(variants, contact);
       if (hit) {
         if (hit !== variants[0]) otherLayout = hit.query;
         const name = foldText(displayName(contact) + " " + (contact.nickname || ""));
         found.push({ contact, rank: hit.words.every((word) => name.includes(word)) ? 0 : 1 });
       }
     });
-    found.sort((a, b) => a.rank - b.rank || sortKey(a.contact).localeCompare(sortKey(b.contact), language));
+    const order = sortBy() === "modified" ? byModified : byName;
+    found.sort((a, b) => a.rank - b.rank || order(a.contact, b.contact));
     return found.map((entry) => entry.contact);
   }
 
@@ -741,6 +760,7 @@
     }, [
       el("option", { value: "all", selected: state.filter === "all" }, t("list.all", { count: state.contacts.size })),
       el("option", { value: "starred", selected: state.filter === "starred" }, t("list.starred")),
+      el("option", { value: "hidden", selected: state.filter === "hidden" }, `${t("list.hidden")} (${Array.from(state.contacts.values()).filter((contact) => contact.hidden).length})`),
       el("optgroup", { label: fieldName("groups") }, [
         el("option", { value: "nogroup", selected: state.filter === "nogroup" }, `${t("list.noGroup")} (${ungrouped(Array.from(state.contacts.values())).length})`),
         ...allGroups.map((group) => el("option", { value: "group:" + group.id, selected: state.filter === "group:" + group.id }, `${group.name} (${group.members.length})`)),
@@ -755,7 +775,8 @@
     const rows = el("ul", { class: "contacts", role: "list" });
     let letter = null;
     items.forEach((contact) => {
-      if (!searching) {
+      // Sorted by the last change, the list has no letters.
+      if (!searching && sortBy() !== "modified") {
         const first = (Array.from(sortKey(contact))[0] || "#").toLocaleUpperCase(language);
         const head = /\p{L}/u.test(first) ? first : "#";
         if (head !== letter) {
@@ -778,7 +799,7 @@
               store(SORT_KEY, event.target.value);
               renderList();
             },
-          }, ["last", "first"].map((option) => el("option", { value: option, selected: sortBy() === option }, t("sort." + option)))),
+          }, SORTS.map((option) => el("option", { value: option, selected: sortBy() === option }, t("sort." + option)))),
         ]),
         el("div", { class: "list-actions" }, [
           filter,
@@ -790,7 +811,7 @@
               el("button", { type: "button", onclick: (event) => { event.target.closest("details").open = false; exportCards(null); } }, t("export.all")),
               el("button", { type: "button", onclick: (event) => { event.target.closest("details").open = false; go("#/groups"); } }, t("groups.title")),
               el("button", { type: "button", onclick: (event) => { event.target.closest("details").open = false; go("#/duplicates"); } }, t("dup.title")),
-              el("button", { type: "button", onclick: (event) => { event.target.closest("details").open = false; go("#/deleted"); } }, t("deleted.title")),
+              el("button", { type: "button", onclick: (event) => { event.target.closest("details").open = false; showAccount("trash"); } }, t("trash.title")),
             ]),
           ]),
         ]),
@@ -843,9 +864,10 @@
 
   function visible() {
     let items = state.query.trim() ? search(state.query)
-      : Array.from(state.contacts.values()).sort((a, b) => sortKey(a).localeCompare(sortKey(b), language));
+      : Array.from(state.contacts.values()).sort(sortBy() === "modified" ? byModified : byName);
     if (onlyPhones()) items = items.filter(hasPhone);
     if (state.filter === "starred") items = items.filter((contact) => contact.starred);
+    else if (state.filter === "hidden") items = items.filter((contact) => contact.hidden);
     else if (state.filter === "nogroup") items = ungrouped(items);
     else if (state.filter.startsWith("group:")) {
       const group = state.groups.find((item) => item.id === state.filter.slice(6));
@@ -855,8 +877,10 @@
   }
 
   function contactRow(contact, active) {
-    const sub = [contact.company, contact.title].filter(Boolean).join(", ")
+    let sub = [contact.company, contact.title].filter(Boolean).join(", ")
       || (contact.phones[0] && contact.phones[0].value) || (contact.emails[0] && contact.emails[0].value) || "";
+    // Sorted by the last change, each row says when that was.
+    if (sortBy() === "modified" && contact.modified) sub = [when(contact.modified), sub].filter(Boolean).join(" · ");
     return el("li", {}, el("a", {
       class: "contact-row" + (active ? " active" : ""),
       href: "#/c/" + contact.id,
@@ -872,6 +896,7 @@
           displayName(contact),
           contact.starred ? el("span", { class: "star-mark", "aria-label": t("contact.starred") }, " ★") : null,
           state.drafts.has(contact.id) ? el("span", { class: "badge warn draft-mark" }, t("draft.badge")) : null,
+          contact.hidden ? el("span", { class: "badge hidden-mark", title: t("hidden.hint") }, t("hidden.badge")) : null,
         ]),
         sub ? el("span", { class: "row-sub muted" }, sub) : null,
       ]),
@@ -926,7 +951,13 @@
       return;
     }
     if (current.view === "new") return showEditor(null);
-    if (current.view === "deleted") return showDeleted();
+    if (current.view === "deleted") {
+      // The deleted cards are in Settings → Trash now.
+      history.replaceState(null, "", location.pathname);
+      renderDetail();
+      showAccount("trash");
+      return;
+    }
     if (current.view === "duplicates") return showDuplicates();
     if (current.view === "groups") return showGroups();
     if (current.view === "google") {
@@ -983,10 +1014,15 @@
           const text = addressLines(entry);
           return pair(labelText(entry.label), [
             el("span", { class: "address" }, text),
-            el("a", { class: "small", href: "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(text.replace(/\n/g, ", ")), target: "_blank", rel: "noopener noreferrer" }, t("contact.map")),
+            el("a", { class: "small map-link", href: "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(text.replace(/\n/g, ", ")), target: "_blank", rel: "noopener noreferrer" }, t("contact.map")),
           ]);
         }
-        if (key === "dates") return pair(labelText(entry.label), dateText(entry.value));
+        if (key === "dates") {
+          return pair(labelText(entry.label), [
+            dateText(entry.value),
+            entry.hidden ? el("span", { class: "muted small" }, " · " + t("birthday.hiddenMark")) : null,
+          ]);
+        }
         if (key === "related") return pair(labelText(entry.label), personLink(entry));
         if (key === "im") return pair([entry.service || "", entry.label && entry.label !== "other" ? " · " + labelText(entry.label) : ""].join("") || labelText(entry.label), entry.value);
         if (key === "social") return pair(entry.service || t("field.social"), entry.url ? link(entry.url, entry.user || entry.url) : entry.user);
@@ -1049,6 +1085,23 @@
       },
     }, contact.starred ? "★" : "☆");
 
+    // Hidden: the card stays here only; the syncs take it off Google, iCloud
+    // and the devices, and bring it back when it is shown again.
+    const toggleHidden = async (event) => {
+      if (!contact.hidden && !window.confirm(t("hidden.confirm", { name: displayName(contact) }))) return;
+      event.target.disabled = true;
+      try {
+        const saved = await api("/contacts/" + contact.id, { method: "PUT", body: { ...contact, hidden: !contact.hidden } });
+        state.contacts.set(saved.id, saved);
+        toast(t(saved.hidden ? "hidden.done" : "hidden.undone"));
+      } catch (error) {
+        toast(error.message);
+        if (error.code === "changed") await reload();
+      }
+      renderList();
+      renderDetail();
+    };
+
     fill(detailNode, el("article", { class: "card contact-card" }, [
       backButton(),
       el("header", { class: "card-head" }, [
@@ -1062,6 +1115,7 @@
           el("h2", {}, [displayName(contact), " ", star]),
           [contact.title, contact.department, personName(contact) ? contact.company : ""].some(Boolean)
             ? el("p", { class: "muted" }, [contact.title, contact.department, personName(contact) ? contact.company : ""].filter(Boolean).join(" · ")) : null,
+          contact.hidden ? el("p", { class: "small" }, [el("span", { class: "badge hidden-mark" }, t("hidden.badge")), t("hidden.hint")]) : null,
         ]),
       ]),
       el("div", { class: "actions start" }, [
@@ -1069,6 +1123,9 @@
         el("button", { type: "button", class: "ghost", onclick: () => go(`#/c/${contact.id}/history`) }, t("contact.history")),
         el("button", { type: "button", class: "ghost", onclick: () => showGraph(contact.id) }, t("graph.open")),
         el("button", { type: "button", class: "ghost", onclick: () => exportCards([contact.id]) }, t("contact.export")),
+        el("button", { type: "button", class: "ghost", onclick: toggleHidden }, t(contact.hidden ? "hidden.show" : "hidden.hide")),
+        // The print style (styles.css) leaves the card alone, with its photo.
+        el("button", { type: "button", class: "ghost", onclick: () => window.print() }, t("contact.print")),
         el("button", {
           type: "button",
           class: "danger",
@@ -1310,6 +1367,24 @@
     renderList();
   }
 
+  // The fields of "Add field" that the book fills often: those filled in at
+  // least FREQUENT_SHARE of the cards changed last (FREQUENT_CARDS of them),
+  // and in FREQUENT_MIN cards at least. The editor shows them at once, so the
+  // fields the user keeps filling in need no search in "Add field".
+  const FREQUENT_CARDS = 100;
+  const FREQUENT_SHARE = 0.2;
+  const FREQUENT_MIN = 3;
+
+  function frequentFields() {
+    const recent = Array.from(state.contacts.values()).sort(byModified).slice(0, FREQUENT_CARDS);
+    const keys = [...FIELDS.name, ...FIELDS.work].filter((field) => field.extra).map((field) => field.key)
+      .concat(Object.keys(FIELDS.lists).filter((key) => FIELDS.lists[key].extra));
+    return keys.filter((key) => {
+      const filled = recent.filter((contact) => (Array.isArray(contact[key]) ? contact[key].length : contact[key])).length;
+      return filled >= FREQUENT_MIN && filled >= recent.length * FREQUENT_SHARE;
+    });
+  }
+
   function showEditor(contact) {
     const key = contact ? contact.id : NEW_DRAFT;
     const kept = state.drafts.get(key);
@@ -1330,8 +1405,14 @@
     delete draft.groups;
     draft.group_ids = draft.group_ids || (contact ? groupsOf(contact.id).map((group) => group.id) : []);
     const shownExtra = new Set([...FIELDS.name, ...FIELDS.work].filter((field) => field.extra && draft[field.key]).map((field) => field.key));
-    if (draft.birthday || draft.hidden_birthday) shownExtra.add("birthday");
-    // Notes are always there.
+    Object.entries(FIELDS.lists).forEach(([name, spec]) => {
+      if (!spec.extra || draft[name].length) shownExtra.add(name);
+    });
+    // The fields this book fills often are there at once too.
+    frequentFields().forEach((name) => shownExtra.add(name));
+    // The birthday and the notes are always there, as the fields an address
+    // book usually has.
+    shownExtra.add("birthday");
     shownExtra.add("notes");
     const error = el("p", { class: "error", role: "alert" });
     const save = el("button", { class: "primary", type: "submit" }, t(contact ? "editor.save" : "editor.create"));
@@ -1508,13 +1589,15 @@
     }
 
     function drawLists() {
-      fill(listsBox, FIELDS.order.filter((key) => key !== "birthday").map((key) => listEditor(key, draft, markDirty)));
+      fill(listsBox, FIELDS.order.filter((key) => key !== "birthday" && shownExtra.has(key)).map((key) => listEditor(key, draft, markDirty)));
     }
 
-    // "Add field": the hidden name and work fields, the birthday and notes.
+    // "Add field": the hidden name and work fields, and the lists that are
+    // not shown, which come with a row to fill in.
     const addable = () => [
       ...FIELDS.name.filter((field) => field.extra && !shownExtra.has(field.key)).map((field) => field.key),
       ...FIELDS.work.filter((field) => field.extra && !shownExtra.has(field.key)).map((field) => field.key),
+      ...FIELDS.order.filter((key) => FIELDS.lists[key] && !shownExtra.has(key)),
       ...["birthday", "notes"].filter((key) => !shownExtra.has(key)),
     ];
     const addField = el("select", {
@@ -1524,6 +1607,13 @@
         const key = event.target.value;
         if (!key) return;
         shownExtra.add(key);
+        if (FIELDS.lists[key]) {
+          drawLists();
+          drawAddField();
+          if (!draft[key].length) listsBox.querySelector(`[data-list="${key}"] .add-row`)?.click();
+          listsBox.querySelector(`[data-list="${key}"]`)?.scrollIntoView({ block: "nearest" });
+          return;
+        }
         drawAll();
         form.querySelector(`[data-key="${key}"] input, [data-key="${key}"] textarea, [data-key="${key}"] select`)?.focus();
       },
@@ -1553,6 +1643,7 @@
     drawLists();
 
     const starred = el("input", { type: "checkbox", checked: Boolean(draft.starred), onchange: (event) => { draft.starred = event.target.checked; } });
+    const hiddenBox = el("input", { type: "checkbox", checked: Boolean(draft.hidden), onchange: (event) => { draft.hidden = event.target.checked; } });
 
     fill(form, [
       el("section", { class: "edit-section" }, [photoBox]),
@@ -1562,6 +1653,10 @@
       el("section", { class: "edit-section" }, [extraBox, addField]),
       el("section", { class: "edit-section" }, [el("h3", {}, fieldName("groups")), groupsEditor(draft, markDirty)]),
       el("label", { class: "check" }, [starred, t("contact.starredField")]),
+      el("div", {}, [
+        el("label", { class: "check" }, [hiddenBox, t("hidden.field")]),
+        el("p", { class: "muted small" }, t("hidden.fieldHint")),
+      ]),
       el("div", { class: "actions sticky-actions" }, [
         error,
         el("button", {
@@ -1613,7 +1708,16 @@
       // Parts such as the PO box show once they have a value or are asked for.
       const shown = (part) => !part.extra || entry[part.key] || (entry.shownParts || []).includes(part.key);
       const inputs = spec.parts.filter(shown).map((part) => {
-        if (part.date) return dateInput(entry.value, (value) => { entry.value = value; });
+        // A date may be kept out of the calendars, as the birthday may.
+        if (part.date) {
+          return el("span", { class: "date-row" }, [
+            dateInput(entry.value, (value) => { entry.value = value; }),
+            el("label", { class: "check small" }, [
+              el("input", { type: "checkbox", checked: Boolean(entry.hidden), onchange: (event) => { entry.hidden = event.target.checked; } }),
+              t("date.hide"),
+            ]),
+          ]);
+        }
         if (key === "related") return personPicker(entry, draft.id, markDirty);
         const attrs = {
           type: part.type || "text",
@@ -1647,8 +1751,9 @@
       ]);
     }));
     draw();
-    return el("section", { class: "edit-section" }, [
+    return el("section", { class: "edit-section", "data-list": key }, [
       el("h3", {}, fieldName(key)),
+      key === "dates" ? el("p", { class: "muted small" }, t("date.hideHint")) : null,
       rows,
       el("button", {
         type: "button",
@@ -1889,11 +1994,14 @@
         Object.entries(entry).forEach(([part, value]) => {
           if (typeof value === "string" && value.trim()) row[part] = value.trim();
         });
+        // The switches of an entry: a date kept out of the calendars.
+        if (key === "dates" && entry.hidden === true) row.hidden = true;
         return row;
-      }).filter((row) => Object.keys(row).some((part) => !["label", "service", "country_code"].includes(part)));
+      }).filter((row) => Object.keys(row).some((part) => !["label", "service", "country_code", "hidden"].includes(part)));
     });
     if (draft.group_ids) body.group_ids = draft.group_ids;
     body.starred = Boolean(draft.starred);
+    body.hidden = Boolean(draft.hidden);
     return body;
   }
 
@@ -2003,7 +2111,7 @@
   // What one version changed against the one before: a row per field, the
   // old value struck out above the new one.
   function differences(before, item) {
-    const keys = [...FIELDS.name, ...FIELDS.work].map((field) => field.key).concat(FIELDS.order, ["notes", "photo", "starred"]);
+    const keys = [...FIELDS.name, ...FIELDS.work].map((field) => field.key).concat(FIELDS.order, ["hidden_birthday", "notes", "photo", "starred", "hidden"]);
     const rows = [];
     keys.forEach((key) => {
       const old = before ? valueText(key, before[key]) : "";
@@ -2283,7 +2391,7 @@
     Object.keys(FIELDS.lists).forEach((key) => {
       const seen = new Set();
       card[key] = [main, ...others].flatMap((contact) => contact[key] || []).filter((entry) => {
-        const { label, ...rest } = entry;
+        const { label, hidden, ...rest } = entry;
         const id = same[key] ? same[key](entry) : foldText(JSON.stringify(rest));
         if (seen.has(id)) return false;
         seen.add(id);
@@ -2412,49 +2520,113 @@
     draw();
   }
 
-  // Deleted cards ------------------------------------------------------------------
+  // Trash ------------------------------------------------------------------------
+  // Deleted cards, in Settings → Trash: each as it was deleted, searched with
+  // the same rules as the list, restored in one step or deleted for good.
 
-  async function showDeleted() {
-    fill(detailNode, el("article", { class: "card" }, [backButton(), el("h2", {}, t("deleted.title")), el("p", { class: "muted" }, t("loading"))]));
-    let items;
-    try {
-      items = (await api("/deleted")).items || [];
-    } catch (error) {
-      fill(detailNode, el("article", { class: "card" }, [backButton(), el("p", { class: "error" }, error.message)]));
-      return;
+  function showTrash(part) {
+    let items = null;
+    let failure = "";
+    let query = "";
+    const list = el("div");
+    const box = el("input", {
+      type: "search",
+      class: "search",
+      placeholder: t("trash.search"),
+      "aria-label": t("trash.search"),
+      oninput: (event) => {
+        query = event.target.value;
+        draw();
+      },
+    });
+
+    // The card of an item as the rest of the page knows a card.
+    const cardOf = (item) => ({ phones: [], emails: [], ...item.card, photo: item.photo || (item.card && item.card.photo) });
+
+    function sub(item) {
+      const card = cardOf(item);
+      const what = [card.company, card.title].filter(Boolean).join(", ")
+        || (card.phones[0] && card.phones[0].value) || (card.emails[0] && card.emails[0].value) || "";
+      const at = item.into && state.contacts.has(item.into)
+        ? t("deleted.mergedInto", { date: when(item.at), name: displayName(state.contacts.get(item.into)) })
+        : t("deleted.at", { date: when(item.at) });
+      return [what, at].filter(Boolean).join(" · ");
     }
-    if (route().view !== "deleted") return;
-    fill(detailNode, el("article", { class: "card" }, [
-      backButton(),
-      el("h2", {}, t("deleted.title")),
-      el("p", { class: "muted small" }, t("deleted.hint")),
-      items.length ? el("ul", { class: "deleted" }, items.map((item) => el("li", {}, [
-        avatar({ first: item.name, photo: item.photo, phones: [], emails: [] }, "small"),
-        el("span", { class: "row-main" }, [
-          el("span", { class: "row-title" }, item.name || t("contact.noName")),
-          el("span", { class: "row-sub muted" }, item.into && state.contacts.has(item.into)
-            ? t("deleted.mergedInto", { date: when(item.at), name: displayName(state.contacts.get(item.into)) })
-            : t("deleted.at", { date: when(item.at) })),
-        ]),
-        el("span", { class: "actions" }, [
-          el("button", { type: "button", class: "ghost", onclick: () => go(`#/c/${item.id}/history`) }, t("deleted.history")),
-          el("button", {
-            type: "button",
-            class: "danger",
-            onclick: async () => {
-              if (!window.confirm(t("deleted.purgeConfirm", { name: item.name }))) return;
-              try {
-                await api("/deleted/" + item.id, { method: "DELETE" });
-                toast(t("deleted.purged"));
-              } catch (error) {
-                toast(error.message);
-              }
-              showDeleted();
-            },
-          }, t("deleted.purge")),
-        ]),
-      ]))) : el("p", { class: "muted" }, t("deleted.none")),
-    ]));
+
+    async function restore(item, button) {
+      button.disabled = true;
+      try {
+        const saved = await api(`/contacts/${item.id}/restore`, { method: "POST", body: { revision: item.revision } });
+        state.contacts.set(saved.id, saved);
+        items = items.filter((other) => other.id !== item.id);
+        toast(t("trash.restored", { name: displayName(saved) }));
+        renderList();
+      } catch (error) {
+        toast(error.message);
+        button.disabled = false;
+        if (error.code === "exists" || error.code === "changed") await load();
+      }
+      draw();
+    }
+
+    async function purge(item) {
+      if (!window.confirm(t("deleted.purgeConfirm", { name: item.name || t("contact.noName") }))) return;
+      try {
+        await api("/deleted/" + item.id, { method: "DELETE" });
+        items = items.filter((other) => other.id !== item.id);
+        toast(t("deleted.purged"));
+      } catch (error) {
+        toast(error.message);
+      }
+      draw();
+    }
+
+    function draw() {
+      if (failure) return fill(list, el("p", { class: "error" }, failure));
+      if (!items) return fill(list, el("p", { class: "muted" }, t("loading")));
+      if (!items.length) return fill(list, el("p", { class: "muted" }, t("trash.none")));
+      const variants = queryVariants(query);
+      const found = variants.length ? items.filter((item) => queryHit(variants, { first: item.name, ...item.card })) : items;
+      fill(list, [
+        el("p", { class: "muted small" }, query.trim() ? t("search.found", { count: found.length }) : t("trash.count", { count: items.length })),
+        found.length ? el("ul", { class: "deleted" }, found.map((item) => {
+          const restoreButton = el("button", { type: "button", class: "primary", disabled: !item.revision, onclick: () => restore(item, restoreButton) }, t("trash.restore"));
+          return el("li", {}, [
+            avatar(cardOf(item), "small"),
+            el("span", { class: "row-main" }, [
+              el("span", { class: "row-title" }, item.name || t("contact.noName")),
+              el("span", { class: "row-sub muted" }, sub(item)),
+            ]),
+            el("span", { class: "actions" }, [
+              restoreButton,
+              el("button", {
+                type: "button",
+                class: "ghost",
+                onclick: () => {
+                  document.querySelector(".dialog-wrap")?.remove();
+                  go(`#/c/${item.id}/history`);
+                },
+              }, t("deleted.history")),
+              el("button", { type: "button", class: "danger", onclick: () => purge(item) }, t("deleted.purge")),
+            ]),
+          ]);
+        })) : el("p", { class: "muted" }, t("search.none")),
+      ]);
+    }
+
+    async function load() {
+      try {
+        items = (await api("/deleted")).items || [];
+        failure = "";
+      } catch (error) {
+        failure = error.message;
+      }
+      draw();
+    }
+
+    fill(part, [el("p", { class: "muted small" }, t("trash.hint")), box, list]);
+    draw();
+    load();
   }
 
   // Import and export ----------------------------------------------------------------
@@ -2553,13 +2725,99 @@
     }
   }
 
+  // Settings → Export: every card as vCard, or an archive of everything (the
+  // cards with all their fields, the history, the trash, the groups, the sync
+  // log and the photos), which a function of its own builds in the
+  // background while the page asks for it.
+  const BACKUP_POLL = 3000;
+
+  function showExport(part) {
+    const status = el("div", { class: "backup-status" });
+    const start = el("button", {
+      type: "button",
+      class: "primary",
+      onclick: async () => {
+        start.disabled = true;
+        try {
+          draw(await api("/backup", { method: "POST" }));
+        } catch (error) {
+          toast(error.message);
+          start.disabled = false;
+        }
+      },
+    }, t("backup.start"));
+    let timer = null;
+
+    function size(bytes) {
+      const units = ["B", "KB", "MB", "GB"];
+      let value = Number(bytes) || 0;
+      let unit = 0;
+      while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit += 1;
+      }
+      return `${value.toLocaleString(language, { maximumFractionDigits: unit ? 1 : 0 })} ${units[unit]}`;
+    }
+
+    function draw(data) {
+      clearTimeout(timer);
+      // The dialog was closed or another tab opened.
+      if (!part.isConnected) return;
+      start.disabled = data.status === "running";
+      if (data.status === "running") {
+        fill(status, el("p", { class: "muted" }, t("backup.running", { date: when(data.started) })));
+        timer = setTimeout(poll, BACKUP_POLL);
+      } else if (data.status === "done") {
+        const counts = data.counts || {};
+        fill(status, [
+          el("p", {}, [
+            el("a", { class: "primary", href: data.url, download: data.name }, t("backup.download", { size: size(data.size) })),
+          ]),
+          el("p", { class: "muted small" }, t("backup.done", {
+            date: when(data.finished), contacts: counts.contacts || 0, versions: counts.versions || 0,
+            deleted: counts.deleted || 0, photos: counts.photos || 0,
+          })),
+        ]);
+      } else if (data.status === "error") {
+        fill(status, el("p", { class: "error" }, t("backup.failed", { error: data.error || "" })));
+      } else if (data.status === "expired") {
+        fill(status, el("p", { class: "muted small" }, t("backup.expired", { date: when(data.finished) })));
+      } else {
+        fill(status, null);
+      }
+    }
+
+    async function poll() {
+      try {
+        draw(await api("/backup"));
+      } catch (error) {
+        fill(status, el("p", { class: "error" }, error.message));
+      }
+    }
+
+    fill(part, [
+      el("section", { class: "sync-section" }, [
+        el("h3", { class: "sync-title" }, t("backup.vcardTitle")),
+        el("p", { class: "muted small" }, t("backup.vcardHint", { count: state.contacts.size })),
+        el("div", { class: "actions start" }, [el("button", { type: "button", class: "ghost", onclick: () => exportCards(null) }, t("export.all"))]),
+      ]),
+      el("section", { class: "sync-section" }, [
+        el("h3", { class: "sync-title" }, t("backup.title")),
+        el("p", { class: "muted small" }, t("backup.hint")),
+        el("div", { class: "actions start" }, [start]),
+        status,
+      ]),
+    ]);
+    poll();
+  }
+
   // Settings ---------------------------------------------------------------
 
   function showAccount(section) {
     // Visitors of the demo share one account: none may change its password or
     // lock it behind their own authenticator app.
     const sections = config.demo ? [] : [["password", t("password.title")], ["mfa", t("mfa.title")]];
-    sections.push(["language", t("language.title")], ["display", t("display.title")], ["sync", t("sync.title")]);
+    sections.push(["language", t("language.title")], ["display", t("display.title")], ["sync", t("sync.title")], ["export", t("backup.tab")], ["trash", t("trash.title")]);
     if (state.me.admin) sections.push(["users", t("users.title")]);
     sections.push(["version", t("version.title")]);
     let current = sections.some(([key]) => key === section) ? section : sections[0][0];
@@ -2598,6 +2856,8 @@
       else if (current === "mfa") showMfa(body);
       else if (current === "display") showDisplay(body);
       else if (current === "sync") showSync(body);
+      else if (current === "trash") showTrash(body);
+      else if (current === "export") showExport(body);
       else if (current === "users") showUsers(body);
       else if (current === "version") showVersion(body);
       else {

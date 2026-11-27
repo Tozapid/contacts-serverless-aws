@@ -26,8 +26,10 @@ pk = ICLOUD, sk = <email> lists the users to sync.
 
 The fingerprint of a card here is taken from the card as vCard read back, so
 that both sides are compared in the same terms, and each side only with
-itself, as with Google. Every change is a line of the sync log and, for a
-card, a version in its history with the action "icloud".
+itself, as with Google. A hidden card (contacts.FLAGS) is not synced: it is
+deleted in iCloud, like a card deleted here, and goes there as new when it
+is shown again. Every change is a line of the sync log and, for a card, a
+version in its history with the action "icloud".
 """
 
 import base64
@@ -57,7 +59,7 @@ MULTIGET = 50
 TIMEOUT = 30
 NS = {"d": "DAV:", "card": "urn:ietf:params:xml:ns:carddav", "cs": "http://calendarserver.org/ns/"}
 # The fields of a card the fingerprint takes; the rest stay here only.
-SKIPPED = {"photo", "uid", "starred", "categories"}
+SKIPPED = {"photo", "uid", "starred", "hidden", "categories"}
 
 
 class ICloudError(Exception):
@@ -469,6 +471,7 @@ class Run:
         # The group cards of iCloud: {url: {uid, name, members, etag}}.
         self.rgroups = {key: dict(value) for key, value in (state.get("rgroups") or {}).items()}
         self.links = {}
+        self.hidden = set()
         self.writes = 0
         self.summary = {"to_book": 0, "to_icloud": 0, "conflicts": 0, "deleted": 0}
 
@@ -478,7 +481,11 @@ class Run:
                           contact_id=(contact or {}).get("id", ""))
 
     def go(self):
-        self.cards = {item["id"]: contacts.plain(item) for item in contacts.all_current(self.owner)}
+        # Hidden cards are not synced: push() deletes them in iCloud as if
+        # they were deleted here.
+        every = [contacts.plain(item) for item in contacts.all_current(self.owner)]
+        self.cards = {item["id"]: item for item in every if not item.get("hidden")}
+        self.hidden = {item["id"] for item in every if item.get("hidden")}
         self.links = {item["id"]: contacts.plain(item) for item in link_items(self.owner)}
         self.load_groups()
         changed, removed, token, full = self.client.changes(self.sync_token)
@@ -725,7 +732,8 @@ class Run:
             self.writes += 1
             drop_link(self.owner, card_id)
             self.summary["to_icloud"] += 1
-            contacts.log_sync(self.owner, "to_icloud", "deleted", target="icloud", name=link.get("name", ""), contact_id=card_id)
+            contacts.log_sync(self.owner, "to_icloud", "deleted", target="icloud", name=link.get("name", ""), contact_id=card_id,
+                              detail="hidden" if card_id in self.hidden else "")
         for card_id, card in self.cards.items():
             link = self.links.get(card_id)
             lhash = self.local_hash(card)

@@ -51,6 +51,7 @@ _dynamodb = None
 _s3 = None
 _cognito = None
 _ses = None
+_lambda = None
 _signing_key = None
 
 TEXT_FIELDS = {
@@ -76,6 +77,8 @@ LIST_FIELDS = {
         "label": 100, "street": 500, "po_box": 100, "extended": 200, "city": 200,
         "region": 200, "postal_code": 50, "country": 200, "country_code": 10,
     },
+    # hidden: true keeps the date out of the calendars of Google and Apple,
+    # as hidden_birthday does for the birthday (vcard.hidden_date_label).
     "dates": {"label": 100, "value": 10},
     # contact: the id of the card of this person, if the page linked one.
     "related": {"label": 100, "value": 200, "contact": 16},
@@ -87,7 +90,13 @@ LIST_FIELDS = {
 # Apple keeps them; Google's labels (CATEGORIES in vCard) become groups on
 # import. Cards saved earlier may still hold "labels" or "groups"; they are
 # not fields and are left out.
-FIELDS = list(TEXT_FIELDS) + list(LIST_FIELDS) + ["starred"]
+# Switches of a card: starred, and hidden, a card that stays here only: it
+# leaves Google, iCloud and the CardDAV devices, and comes back to them when
+# the switch is off again.
+FLAGS = ["starred", "hidden"]
+# Switches of the entries of a list.
+ENTRY_FLAGS = {"dates": ("hidden",)}
+FIELDS = list(TEXT_FIELDS) + list(LIST_FIELDS) + FLAGS
 LIST_MAX = 50
 GROUPS_MAX = 200
 CONTACTS_MAX = 10_000
@@ -302,6 +311,11 @@ def route(method, parts, event, owner):
         return response(200, import_vcards(owner, body_json(event, IMPORT_MAX_BYTES + 100_000)))
     if parts == ["export"] and method == "POST":
         return response(200, export_vcards(owner, body_json(event)))
+    # The full export: an archive of everything, built in the background.
+    if parts == ["backup"] and method in ("GET", "POST"):
+        import backup
+
+        return response(200, backup.start(owner) if method == "POST" else backup.public_state(backup.state(owner)))
     raise ApiError(404, "not_found")
 
 
@@ -419,6 +433,7 @@ def delete_contact(owner, contact_id, etag):
     if old.get("etag") != etag:
         raise ApiError(409, "changed")
     now = now_iso()
+    revision = revision_item(old, "delete", now, owner, [])
     transact([
         {"Delete": {
             "TableName": table_name(),
@@ -426,20 +441,30 @@ def delete_contact(owner, contact_id, etag):
             "ConditionExpression": "etag = :etag",
             "ExpressionAttributeValues": marshal_item({":etag": etag}),
         }},
-        put_action(revision_item(old, "delete", now, owner, []), None),
-        put_action({
-            "pk": user_pk(owner),
-            "sk": "DELETED#" + contact_id,
-            "id": contact_id,
-            "name": vcard.display_name(old) or first_value(old),
-            "photo": old.get("photo", ""),
-            "at": now,
-            "by": owner,
-            **dav_of(old),
-        }, None),
+        put_action(revision, None),
+        put_action(trash_item(owner, old, now, revision["sk"]), None),
         drop_draft(owner, contact_id),
     ])
     return {"deleted": contact_id}
+
+
+def trash_item(owner, old, now, revision, extra=None):
+    """The entry of a deleted card in the trash (sk = DELETED#<id>): its name,
+    the card as it was, for the trash to show and search, and the version to
+    restore."""
+    return {
+        "pk": user_pk(owner),
+        "sk": "DELETED#" + old["id"],
+        "id": old["id"],
+        "name": vcard.display_name(old) or first_value(old),
+        "photo": old.get("photo", ""),
+        "card": {key: old[key] for key in FIELDS if key in old and old[key] not in ("", [], None)},
+        "revision": revision,
+        "at": now,
+        "by": owner,
+        **(extra or {}),
+        **dav_of(old),
+    }
 
 
 # Duplicates ------------------------------------------------------------------------
@@ -485,6 +510,7 @@ def merge_contacts(owner, payload):
         drop_draft(owner, target_id),
     ]
     for source in merged:
+        revision = revision_item(source, "merged", now, owner, [], {"into": target_id})
         actions += [
             {"Delete": {
                 "TableName": table_name(),
@@ -492,18 +518,8 @@ def merge_contacts(owner, payload):
                 "ConditionExpression": "etag = :etag",
                 "ExpressionAttributeValues": marshal_item({":etag": source["etag"]}),
             }},
-            put_action(revision_item(source, "merged", now, owner, [], {"into": target_id}), None),
-            put_action({
-                "pk": user_pk(owner),
-                "sk": "DELETED#" + source["id"],
-                "id": source["id"],
-                "name": vcard.display_name(source) or first_value(source),
-                "photo": source.get("photo", ""),
-                "at": now,
-                "by": owner,
-                "into": target_id,
-                **dav_of(source),
-            }, None),
+            put_action(revision, None),
+            put_action(trash_item(owner, source, now, revision["sk"], {"into": target_id}), None),
             drop_draft(owner, source["id"]),
         ]
     # The groups of the merged cards get the card kept in their place.
@@ -1045,22 +1061,67 @@ def revisions(owner, contact_id):
     return [public_revision(item) for item in page.get("Items", [])]
 
 
-def deleted_contacts(owner):
+def deleted_items(owner, fields=None):
     from boto3.dynamodb.conditions import Key
 
     items, kwargs = [], {"KeyConditionExpression": Key("pk").eq(user_pk(owner)) & Key("sk").begins_with("DELETED#")}
+    if fields:
+        names = {f"#f{n}": field for n, field in enumerate(fields)}
+        kwargs["ProjectionExpression"] = ", ".join(names)
+        kwargs["ExpressionAttributeNames"] = names
     while True:
         page = table().query(**kwargs)
-        items.extend({
+        items.extend(page.get("Items", []))
+        if not page.get("LastEvaluatedKey"):
+            return items
+        kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+
+
+def deleted_contacts(owner):
+    """The trash, newest first: every deleted card with its fields as it was
+    deleted, which the page shows and searches, and the version a restore
+    takes."""
+    items = []
+    for item in deleted_items(owner):
+        if not item.get("card") or not item.get("revision"):
+            item = fill_trash_item(owner, item)
+        items.append({
             "id": item["id"], "name": item.get("name", ""), "photo": item.get("photo", ""), "at": item.get("at", ""),
+            "card": plain(item.get("card") or {}), "revision": item.get("revision", ""),
             # The card a merged one went into.
             **({"into": item["into"]} if item.get("into") else {}),
             **dav_of(item),
-        } for item in page.get("Items", []))
-        if not page.get("LastEvaluatedKey"):
-            break
-        kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+        })
     return sorted(items, key=lambda item: item["at"], reverse=True)
+
+
+def fill_trash_item(owner, item):
+    """A card deleted before the trash kept the card: the card and the
+    version come from its newest version, once, and are kept."""
+    from boto3.dynamodb.conditions import Key
+
+    page = table().query(
+        KeyConditionExpression=Key("pk").eq(user_pk(owner)) & Key("sk").begins_with(f"REV#{item['id']}#"),
+        ScanIndexForward=False,
+        Limit=1,
+    )
+    revisions = page.get("Items", [])
+    if not revisions:
+        return item
+    rev = revisions[0]
+    card = {key: rev[key] for key in FIELDS if key in rev and rev[key] not in ("", [], None)}
+    try:
+        table().update_item(
+            Key={"pk": user_pk(owner), "sk": "DELETED#" + item["id"]},
+            UpdateExpression="SET #card = :card, #revision = :revision",
+            ConditionExpression="attribute_exists(pk)",
+            ExpressionAttributeNames={"#card": "card", "#revision": "revision"},
+            ExpressionAttributeValues={":card": card, ":revision": rev["sk"]},
+        )
+    except Exception as exc:
+        if not conditional_failed(exc):
+            raise
+    return {**item, "card": card, "revision": rev["sk"]}
 
 
 # A deleted card goes for good, with its history. Its photos stay in S3 only
@@ -1148,7 +1209,8 @@ def public_contact(item):
     contact = {key: plain(item[key]) for key in FIELDS if key in item}
     for key in LIST_FIELDS:
         contact.setdefault(key, [])
-    contact["starred"] = bool(item.get("starred"))
+    for flag in FLAGS:
+        contact[flag] = bool(item.get(flag))
     contact.update({"id": item["id"], "etag": item.get("etag", ""), "created": item.get("created", ""), "modified": item.get("modified", "")})
     return contact
 
@@ -1225,7 +1287,12 @@ def clean_contact(payload, owner, blank_ok=False):
                     raise ApiError(400, "bad_field", key)
                 if value:
                     row[part] = value
-            if not any(value for part, value in row.items() if part not in ("label", "service", "country_code")):
+            for flag in ENTRY_FLAGS.get(key, ()):
+                if entry.get(flag) not in (None, False, True):
+                    raise ApiError(400, "bad_flag", key)
+                if entry.get(flag) is True:
+                    row[flag] = True
+            if not any(value for part, value in row.items() if part not in ("label", "service", "country_code", *ENTRY_FLAGS.get(key, ()))):
                 continue
             if row.get("contact") and not ID_RE.fullmatch(row["contact"]):
                 raise ApiError(400, "bad_field", key)
@@ -1237,11 +1304,14 @@ def clean_contact(payload, owner, blank_ok=False):
             clean.append(row)
         if clean:
             contact[key] = clean
-    starred = payload.get("starred", False)
-    if not isinstance(starred, bool):
-        raise ApiError(400, "bad_flag", "starred")
-    if starred:
-        contact["starred"] = True
+    for flag in FLAGS:
+        value = payload.get(flag, False)
+        if value is None:
+            value = False
+        if not isinstance(value, bool):
+            raise ApiError(400, "bad_flag", flag)
+        if value:
+            contact[flag] = True
     # Apple Contacts sends a new card before anything is typed in it, so a
     # card from CardDAV may be blank; the page asks for at least a name.
     if not blank_ok and not any(contact.get(key) for key in ("first", "last", "middle", "nickname", "company", "phones", "emails")):
@@ -1275,7 +1345,7 @@ def haystack(item):
         elif isinstance(value, str):
             words.append(value)
     for key in FIELDS:
-        if key in ("photo", "uid", "starred"):
+        if key in ("photo", "uid", *FLAGS):
             continue
         walk(plain(item.get(key)))
     for entry in item.get("phones") or []:
@@ -1339,7 +1409,7 @@ def search_history(owner, query):
     if not variants:
         return []
     found = {}
-    deleted = {item["id"]: item for item in deleted_contacts(owner)}
+    deleted = {item["id"] for item in deleted_items(owner, ["id"])}
     kwargs = {"KeyConditionExpression": Key("pk").eq(user_pk(owner)) & Key("sk").begins_with("REV#")}
     while True:
         page = table().query(**kwargs)
@@ -1539,7 +1609,8 @@ def find_match(existing, contact):
 
 def merge_import(current, imported, names=None):
     merged = {key: value for key, value in imported.items() if key in FIELDS and value not in ("", [], None)}
-    for key in ("photo", "starred", "custom"):
+    # A file knows nothing of a card kept out of the sync.
+    for key in ("photo", "starred", "hidden", "custom"):
         if not merged.get(key) and current.get(key):
             merged[key] = current[key]
     if not merged.get("uid") and current.get("uid"):
@@ -1579,6 +1650,29 @@ def export_vcards(owner, payload):
     wanted = set(wanted) if wanted is not None else None
     every = list(all_current(owner))
     items = [item for item in every if wanted is None or item["id"] in wanted]
+    text = vcard_file(owner, items, every)
+    key = f"exports/{user_key(owner)}/{uuid.uuid4().hex}.vcf"
+    items.sort(key=lambda item: fold(vcard.display_name(plain(item))))
+    name = "contacts.vcf" if len(items) != 1 else (vcard.display_name(plain(items[0])) or "contact").replace("/", "-")[:80] + ".vcf"
+    s3().put_object(Bucket=env("PHOTOS_BUCKET"), Key=key, Body=text.encode("utf-8"), ContentType="text/vcard; charset=utf-8")
+    url = s3().generate_presigned_url(
+        "get_object",
+        Params={
+            "Bucket": env("PHOTOS_BUCKET"),
+            "Key": key,
+            # The name in UTF-8 for the browser, and a plain one for the rest.
+            "ResponseContentDisposition": f"attachment; filename=\"contacts.vcf\"; filename*=UTF-8''{quote(name)}",
+            "ResponseContentType": "text/vcard; charset=utf-8",
+        },
+        ExpiresIn=300,
+    )
+    return {"url": url, "count": len(items), "name": name}
+
+
+def vcard_file(owner, items, every=None):
+    """A vCard file of the cards (items), with their photos, and their groups
+    as CATEGORIES; every: all the cards, for the names of related people."""
+    every = items if every is None else every
     # A related person linked to a card goes by the name the card has now.
     names = {item["id"]: vcard.display_name(plain(item)) for item in every}
     names_by_uid = {}
@@ -1602,21 +1696,7 @@ def export_vcards(owner, payload):
         contact["related"] = [{**entry, "value": names.get(entry.get("contact")) or entry.get("value", "")} for entry in contact.get("related") or []]
         # The groups go as CATEGORIES, which Google reads as its labels.
         parts.append(vcard.contact_to_card(contact, photo, names_by_uid.get(dav_uid(item), [])))
-    key = f"exports/{user_key(owner)}/{uuid.uuid4().hex}.vcf"
-    name = "contacts.vcf" if len(items) != 1 else (vcard.display_name(plain(items[0])) or "contact").replace("/", "-")[:80] + ".vcf"
-    s3().put_object(Bucket=env("PHOTOS_BUCKET"), Key=key, Body="".join(parts).encode("utf-8"), ContentType="text/vcard; charset=utf-8")
-    url = s3().generate_presigned_url(
-        "get_object",
-        Params={
-            "Bucket": env("PHOTOS_BUCKET"),
-            "Key": key,
-            # The name in UTF-8 for the browser, and a plain one for the rest.
-            "ResponseContentDisposition": f"attachment; filename=\"contacts.vcf\"; filename*=UTF-8''{quote(name)}",
-            "ResponseContentType": "text/vcard; charset=utf-8",
-        },
-        ExpiresIn=300,
-    )
-    return {"url": url, "count": len(items), "name": name}
+    return "".join(parts)
 
 
 # Administration -------------------------------------------------------------
@@ -1999,6 +2079,14 @@ def ses():
         import boto3
         _ses = boto3.client("sesv2")
     return _ses
+
+
+def lambda_client():
+    global _lambda
+    if _lambda is None:
+        import boto3
+        _lambda = boto3.client("lambda")
+    return _lambda
 
 
 def cognito():

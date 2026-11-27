@@ -235,6 +235,27 @@ class ICloudSyncTest(unittest.TestCase):
         self.assertEqual((theirs.get("birthday"), theirs["hidden_birthday"]), (None, "1990-05-04"))
         self.assertEqual(self.sync()["to_icloud"], 0)
 
+    def test_hidden_dates_and_hidden_cards(self):
+        anna = contacts.create_contact(OWNER, {"first": "Анна", "dates": [{"label": "anniversary", "value": "2010-06-01", "hidden": True}]})
+        contacts.create_contact(OWNER, {"first": "Борис"})
+        self.connect()
+        self.sync()
+        self.assertEqual(self.theirs()["Анна"]["dates"], [{"label": "anniversary", "value": "2010-06-01", "hidden": True}])
+        self.assertEqual(self.sync()["to_icloud"], 0)
+        # Hidden here: deleted in iCloud, kept here.
+        card = contacts.get_current(OWNER, anna["id"])
+        contacts.save_contact(OWNER, anna["id"], {**contacts.public_contact(card), "hidden": True})
+        self.sync()
+        self.assertEqual((set(self.theirs()), set(self.mine())), ({"Борис"}, {"Анна", "Борис"}))
+        self.assertEqual(next(line for line in self.log() if line["source"] == "to_icloud" and line["action"] == "deleted")["detail"], "hidden")
+        self.assertEqual(self.sync(), {"to_book": 0, "to_icloud": 0, "conflicts": 0, "deleted": 0})
+        # Shown again: back in iCloud.
+        card = contacts.get_current(OWNER, anna["id"])
+        contacts.save_contact(OWNER, anna["id"], {**contacts.public_contact(card), "hidden": False})
+        self.sync()
+        self.assertEqual(set(self.theirs()), {"Анна", "Борис"})
+        self.assertEqual(self.sync()["to_icloud"], 0)
+
     def test_busy_and_reauth(self):
         self.connect()
         self.assertTrue(icloud_sync.lock(OWNER))

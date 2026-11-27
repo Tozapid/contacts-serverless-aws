@@ -170,6 +170,7 @@
         "phones": [{"label": "mobile", "value": "+44 7700 900987"}],
         "emails": [{"label": "home", "value": "tom.hughes@example.com"}],
         "hidden_birthday": "1989-12-24",
+        "dates": [{"label": "Started at the firm", "value": "2015-09-01", "hidden": true}],
         "notes": "Does not celebrate his birthday — no reminders, but keep the date."
       }
     },
@@ -226,7 +227,8 @@
         "company": "O'Brien Plumbing",
         "title": "Plumber",
         "phones": [{"label": "work", "value": "+44 7700 900246"}],
-        "notes": "Fixed the boiler in March. Cash or bank transfer."
+        "hidden": true,
+        "notes": "Fixed the boiler in March. Cash or bank transfer. Hidden: kept here only, not on the phones."
       }
     },
     {

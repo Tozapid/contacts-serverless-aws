@@ -19,8 +19,10 @@ address book: vCards of the kind "group" that list the UIDs of their members
 (contacts.py, sk = GROUP#<id>). The etag of a card is its etag in the table, so
 If-Match works as the check of the page does. The sync token is the time of
 the latest change: a newer card is reported as changed, a newer DELETED# as
-gone. A change from a client is a version in the history like any other,
-with the action "sync".
+gone. A hidden card (contacts.FLAGS) is not in the address book of the
+devices: it is gone as of its last change, and is back as changed when it
+is shown again. A change from a client is a version in the history like any
+other, with the action "sync".
 """
 
 import base64
@@ -210,10 +212,16 @@ def etag_of(item):
 
 def cards_by_name(owner):
     """Every resource of the address book by its name: the cards and Apple's
-    groups (an item of a group has "members")."""
-    resources = {card_name(item): item for item in contacts.all_current(owner)}
+    groups (an item of a group has "members"). Hidden cards are left out."""
+    resources = {card_name(item): item for item in contacts.all_current(owner) if not item.get("hidden")}
     resources.update({card_name(item): item for item in contacts.group_items(owner)})
     return resources
+
+
+def hidden_cards(owner):
+    """Hidden cards as tombstones: gone from the devices since they changed."""
+    return [{"id": item["id"], "at": item.get("modified", ""), **contacts.dav_of(item)}
+            for item in contacts.all_current(owner, ["id", "modified", "dav", "hidden"]) if item.get("hidden")]
 
 
 def is_group_item(item):
@@ -233,7 +241,7 @@ def tombstones(owner):
             if not page.get("LastEvaluatedKey"):
                 break
             kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
-    return items
+    return items + hidden_cards(owner)
 
 
 def card_text(item):
@@ -315,6 +323,14 @@ def merge_device_card(current, contact, present, names):
     # calendars.
     if current.get("hidden_birthday") and not contact.get("hidden_birthday") and not contact.get("birthday"):
         contact["hidden_birthday"] = current["hidden_birthday"]
+    # The same for the other dates kept out of the calendars.
+    if not any(entry.get("hidden") for entry in contact.get("dates") or []):
+        kept = [entry for entry in current.get("dates") or [] if entry.get("hidden")]
+        sent = {entry.get("value") for entry in contact.get("dates") or []}
+        contact["dates"] = list(contact.get("dates") or []) + [entry for entry in kept if entry.get("value") not in sent]
+    # Hidden is a switch of the page only.
+    if current.get("hidden"):
+        contact["hidden"] = True
     contact["related"] = contacts.keep_links(current.get("related"), contact.get("related"), names)
     return contact
 
@@ -330,6 +346,11 @@ def put_card(name, headers, body, owner):
     if headers.get("if-none-match", "").strip() == "*" and item:
         raise DavError(412)
     if headers.get("if-match") and not item:
+        raise DavError(412)
+    if not item and name in {card_name(gone) for gone in hidden_cards(owner)}:
+        # A device that has not yet heard that the card is hidden: the card
+        # stays as it is here, and the next sync takes it off the device.
+        _note["refused"] = "hidden"
         raise DavError(412)
     _note.update({"uid": next((value.strip() for _, prop, _, value in props if prop == "UID"), ""), "exists": bool(item)})
     if vcard.is_group(props):

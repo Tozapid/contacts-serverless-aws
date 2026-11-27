@@ -28,8 +28,9 @@ The fingerprint of a card here is taken from the card as vCard read back, so
 that both sides are compared in the same terms, and each side only with
 itself, as with Google. A hidden card (contacts.FLAGS) is not synced: it is
 deleted in iCloud, like a card deleted here, and goes there as new when it
-is shown again. Every change is a line of the sync log and, for a card, a
-version in its history with the action "icloud".
+is shown again; so does a hidden group with the cards in it. Every change
+is a line of the sync log and, for a card, a version in its history with
+the action "icloud".
 """
 
 import base64
@@ -484,8 +485,9 @@ class Run:
         # Hidden cards are not synced: push() deletes them in iCloud as if
         # they were deleted here.
         every = [contacts.plain(item) for item in contacts.all_current(self.owner)]
-        self.cards = {item["id"]: item for item in every if not item.get("hidden")}
-        self.hidden = {item["id"] for item in every if item.get("hidden")}
+        hidden = contacts.hidden_uids(self.owner)
+        self.cards = {item["id"]: item for item in every if not contacts.is_hidden(item, hidden)}
+        self.hidden = {item["id"] for item in every if contacts.is_hidden(item, hidden)}
         self.links = {item["id"]: contacts.plain(item) for item in link_items(self.owner)}
         self.load_groups()
         changed, removed, token, full = self.client.changes(self.sync_token)
@@ -506,7 +508,8 @@ class Run:
     # Maps --------------------------------------------------------------------
 
     def load_groups(self):
-        self.groups = {item["id"]: contacts.plain(item) for item in contacts.group_items(self.owner)}
+        # A hidden group is not synced: deleted in iCloud like a group deleted here.
+        self.groups = {item["id"]: contacts.plain(item) for item in contacts.group_items(self.owner) if not item.get("hidden")}
 
     def remote_uid_of(self, card_id):
         link = self.links.get(card_id)

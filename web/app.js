@@ -653,6 +653,15 @@
     return state.groups.filter((group) => group.members.includes(id));
   }
 
+  // A card kept out of the syncs: marked hidden itself, or in a hidden group.
+  function hiddenGroupsOf(contact) {
+    return groupsOf(contact.id).filter((group) => group.hidden);
+  }
+
+  function isHidden(contact) {
+    return Boolean(contact.hidden) || hiddenGroupsOf(contact).length > 0;
+  }
+
   async function loadGroups() {
     try {
       state.groups = (await api("/groups")).items || [];
@@ -760,7 +769,7 @@
     }, [
       el("option", { value: "all", selected: state.filter === "all" }, t("list.all", { count: state.contacts.size })),
       el("option", { value: "starred", selected: state.filter === "starred" }, t("list.starred")),
-      el("option", { value: "hidden", selected: state.filter === "hidden" }, `${t("list.hidden")} (${Array.from(state.contacts.values()).filter((contact) => contact.hidden).length})`),
+      el("option", { value: "hidden", selected: state.filter === "hidden" }, `${t("list.hidden")} (${Array.from(state.contacts.values()).filter(isHidden).length})`),
       el("optgroup", { label: fieldName("groups") }, [
         el("option", { value: "nogroup", selected: state.filter === "nogroup" }, `${t("list.noGroup")} (${ungrouped(Array.from(state.contacts.values())).length})`),
         ...allGroups.map((group) => el("option", { value: "group:" + group.id, selected: state.filter === "group:" + group.id }, `${group.name} (${group.members.length})`)),
@@ -867,7 +876,7 @@
       : Array.from(state.contacts.values()).sort(sortBy() === "modified" ? byModified : byName);
     if (onlyPhones()) items = items.filter(hasPhone);
     if (state.filter === "starred") items = items.filter((contact) => contact.starred);
-    else if (state.filter === "hidden") items = items.filter((contact) => contact.hidden);
+    else if (state.filter === "hidden") items = items.filter(isHidden);
     else if (state.filter === "nogroup") items = ungrouped(items);
     else if (state.filter.startsWith("group:")) {
       const group = state.groups.find((item) => item.id === state.filter.slice(6));
@@ -896,7 +905,7 @@
           displayName(contact),
           contact.starred ? el("span", { class: "star-mark", "aria-label": t("contact.starred") }, " ★") : null,
           state.drafts.has(contact.id) ? el("span", { class: "badge warn draft-mark" }, t("draft.badge")) : null,
-          contact.hidden ? el("span", { class: "badge hidden-mark", title: t("hidden.hint") }, t("hidden.badge")) : null,
+          isHidden(contact) ? el("span", { class: "badge hidden-mark", title: t("hidden.hint") }, t("hidden.badge")) : null,
         ]),
         sub ? el("span", { class: "row-sub muted" }, sub) : null,
       ]),
@@ -1098,7 +1107,10 @@
           el("h2", {}, [displayName(contact), " ", star]),
           [contact.title, contact.department, personName(contact) ? contact.company : ""].some(Boolean)
             ? el("p", { class: "muted" }, [contact.title, contact.department, personName(contact) ? contact.company : ""].filter(Boolean).join(" · ")) : null,
-          contact.hidden ? el("p", { class: "small" }, [el("span", { class: "badge hidden-mark" }, t("hidden.badge")), t("hidden.hint")]) : null,
+          isHidden(contact) ? el("p", { class: "small" }, [
+            el("span", { class: "badge hidden-mark" }, t("hidden.badge")),
+            contact.hidden ? t("hidden.hint") : t("hidden.byGroup", { groups: hiddenGroupsOf(contact).map((group) => group.name).join(", ") }),
+          ]) : null,
         ]),
       ]),
       el("div", { class: "actions start" }, [
@@ -1619,6 +1631,8 @@
       el("div", {}, [
         el("label", { class: "check" }, [hiddenBox, t("hidden.field")]),
         el("p", { class: "muted small" }, t("hidden.fieldHint")),
+        contact && hiddenGroupsOf(contact).length
+          ? el("p", { class: "muted small" }, t("hidden.byGroup", { groups: hiddenGroupsOf(contact).map((group) => group.name).join(", ") })) : null,
       ]),
       el("div", { class: "actions sticky-actions" }, [
         // Deleting is a step of editing: the card goes to the trash.
@@ -2166,7 +2180,10 @@
       }, [
         el("span", { class: "avatar initials small", "aria-hidden": "true" }, initials({ first: group.name })),
         el("span", { class: "row-main" }, [
-          el("span", { class: "row-title" }, group.name),
+          el("span", { class: "row-title" }, [
+            group.name,
+            group.hidden ? el("span", { class: "badge hidden-mark", title: t("groups.hiddenHint") }, t("groups.hiddenBadge")) : null,
+          ]),
           el("span", { class: "row-sub muted" }, t("groups.members", { count: group.members.length })),
         ]),
       ])))) : el("p", { class: "muted" }, t("groups.none")),
@@ -2227,6 +2244,7 @@
         el("div", { class: "card-title" }, [
           el("h2", {}, group.name),
           el("p", { class: "muted" }, t("groups.members", { count: members.length })),
+          group.hidden ? el("p", { class: "small" }, [el("span", { class: "badge hidden-mark" }, t("groups.hiddenBadge")), t("groups.hiddenHint")]) : null,
         ]),
       ]),
       el("div", { class: "actions start" }, [
@@ -2248,6 +2266,15 @@
             if (text && text.trim() && text.trim() !== group.name) save({ name: text.trim() }, t("groups.renamed"));
           },
         }, t("groups.rename")),
+        // The group and its members leave Google, iCloud and the devices.
+        el("button", {
+          type: "button",
+          class: "ghost",
+          onclick: () => {
+            if (!group.hidden && !window.confirm(t("groups.hideConfirm", { name: group.name, count: members.length }))) return;
+            save({ hidden: !group.hidden }, t(group.hidden ? "groups.shown" : "groups.hiddenDone"));
+          },
+        }, t(group.hidden ? "groups.show_again" : "groups.hide")),
         el("button", {
           type: "button",
           class: "danger",

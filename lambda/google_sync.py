@@ -26,8 +26,9 @@ A sync compares each side with its own fingerprint: a side changed when its
 fingerprint differs. Comparing each side only with itself keeps a field that
 Google writes a little differently from going back and forth.
 
-A hidden card (contacts.FLAGS) is not synced: it is deleted in Google,
-like a card deleted here, and goes there as new when it is shown again.
+A hidden card (contacts.FLAGS) is not synced, nor is a hidden group with
+the cards in it: they are deleted in Google, like a card or group deleted
+here, and go there as new when they are shown again.
 
 Every change is a line of the sync log (contacts.log_sync) and, for a card,
 a version in its history with the action "google".
@@ -634,8 +635,9 @@ class Run:
         # Hidden cards are not synced: push() deletes them in Google as if
         # they were deleted here.
         every = [contacts.plain(item) for item in contacts.all_current(self.owner)]
-        self.cards = {item["id"]: item for item in every if not item.get("hidden")}
-        self.hidden = {item["id"] for item in every if item.get("hidden")}
+        hidden = contacts.hidden_uids(self.owner)
+        self.cards = {item["id"]: item for item in every if not contacts.is_hidden(item, hidden)}
+        self.hidden = {item["id"] for item in every if contacts.is_hidden(item, hidden)}
         self.links = {item["id"]: contacts.plain(item) for item in link_items(self.owner)}
         self.sync_groups()
         people, full = self.changed_people()
@@ -656,7 +658,8 @@ class Run:
             page_token = answer.get("nextPageToken")
             if not page_token:
                 break
-        local = {item["id"]: contacts.plain(item) for item in contacts.group_items(self.owner)}
+        # A hidden group is not synced: deleted in Google like a group deleted here.
+        local = {item["id"]: contacts.plain(item) for item in contacts.group_items(self.owner) if not item.get("hidden")}
         state = self.group_state
         for group_id, known in list(state.items()):
             mine, theirs = local.get(group_id), remote.get(known["resource"])

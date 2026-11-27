@@ -214,6 +214,30 @@ class CardDavTest(unittest.TestCase):
         root = self.xml(self.call("REPORT", "/dav/home/contacts/", ask.format(carddav.sync_prefix() + hidden["modified"])))
         self.assertEqual(root.findtext("d:response/d:propstat/d:prop/d:getetag", namespaces=NS), f'"{shown["etag"]}"')
 
+    def test_a_hidden_group_leaves_the_devices_with_its_cards(self):
+        anna = self.page_contact(first="Анна")
+        boris = self.page_contact(first="Борис")
+        family = contacts.create_group(OWNER, {"name": "Семья", "members": [anna["id"]]})
+        ask = '<d:sync-collection xmlns:d="DAV:"><d:sync-token>{}</d:sync-token><d:prop><d:getetag/></d:prop></d:sync-collection>'
+        since = carddav.sync_prefix() + contacts.get_group(OWNER, family["id"])["modified"]
+        time.sleep(0.005)
+        group = contacts.get_group(OWNER, family["id"])
+        contacts.update_group(OWNER, family["id"], {"hidden": True, "etag": group["etag"]})
+        root = self.xml(self.call("REPORT", "/dav/home/contacts/", ask.format(since)))
+        gone = {node.findtext("d:href", namespaces=NS) for node in root.findall("d:response", NS) if node.findtext("d:status", namespaces=NS) == "HTTP/1.1 404 Not Found"}
+        self.assertEqual(gone, {f"/dav/home/contacts/{anna['id']}.vcf", f"/dav/home/contacts/{family['id']}.vcf"})
+        self.assertEqual(self.call("GET", f"/dav/home/contacts/{anna['id']}.vcf")["statusCode"], 404)
+        self.assertEqual(self.call("GET", f"/dav/home/contacts/{boris['id']}.vcf")["statusCode"], 200)
+        # Shown again: Анна comes back as changed, though her card did not change.
+        hidden_at = contacts.get_group(OWNER, family["id"])["modified"]
+        time.sleep(0.005)
+        group = contacts.get_group(OWNER, family["id"])
+        contacts.update_group(OWNER, family["id"], {"hidden": False, "etag": group["etag"]})
+        root = self.xml(self.call("REPORT", "/dav/home/contacts/", ask.format(carddav.sync_prefix() + hidden_at)))
+        back = {node.findtext("d:href", namespaces=NS) for node in root.findall("d:response", NS) if node.find("d:propstat", NS) is not None}
+        self.assertEqual(back, {f"/dav/home/contacts/{anna['id']}.vcf", f"/dav/home/contacts/{family['id']}.vcf"})
+        self.assertEqual(contacts.get_current(OWNER, anna["id"])["modified"], anna["modified"])
+
     def test_a_client_keeps_hidden_dates(self):
         made = self.page_contact(dates=[{"label": "anniversary", "value": "2010-06-01", "hidden": True}])
         text = self.call("GET", f"/dav/home/contacts/{made['id']}.vcf")["body"]

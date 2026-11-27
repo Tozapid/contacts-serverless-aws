@@ -340,6 +340,19 @@ class ApiTest(unittest.TestCase):
         status, data = self.call("PUT", f"/api/contacts/{made['id']}", {**saved, "hidden": "yes"})
         self.assertEqual((status, data["code"], data["detail"]), (400, "bad_flag", "hidden"))
 
+    def test_hidden_group(self):
+        anna, boris = self.create(), self.create(first="Борис")
+        status, group = self.call("POST", "/api/groups", {"name": "Семья", "members": [anna["id"]]})
+        self.assertIs(group["hidden"], False)
+        status, group = self.call("PUT", f"/api/groups/{group['id']}", {"hidden": True, "etag": group["etag"]})
+        self.assertEqual((status, group["hidden"]), (200, True))
+        hidden = contacts.hidden_uids(OWNER)
+        self.assertEqual([contacts.is_hidden(contacts.get_current(OWNER, card["id"]), hidden) for card in (anna, boris)], [True, False])
+        self.assertTrue(contacts.get_current(OWNER, anna["id"])["dav_at"])
+        self.assertNotIn("dav_at", contacts.get_current(OWNER, boris["id"]))
+        status, data = self.call("PUT", f"/api/groups/{group['id']}", {"hidden": "yes", "etag": group["etag"]})
+        self.assertEqual((status, data["code"]), (400, "bad_flag"))
+
     def test_trash_keeps_the_card_to_search_and_restore(self):
         made = self.create(company="Ромашка", phones=[{"label": "mobile", "value": "+7 916 123-45-67"}], notes="с дачи")
         self.call("DELETE", f"/api/contacts/{made['id']}", params={"etag": made["etag"]})

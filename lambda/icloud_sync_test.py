@@ -256,6 +256,24 @@ class ICloudSyncTest(unittest.TestCase):
         self.assertEqual(set(self.theirs()), {"Анна", "Борис"})
         self.assertEqual(self.sync()["to_icloud"], 0)
 
+    def test_a_hidden_group_leaves_icloud_with_its_cards(self):
+        anna = contacts.create_contact(OWNER, {"first": "Анна"})
+        contacts.create_contact(OWNER, {"first": "Борис"})
+        family = contacts.create_group(OWNER, {"name": "Семья", "members": [anna["id"]]})
+        self.connect()
+        self.sync()
+        self.assertEqual((set(self.theirs()), [g["name"] for g in contacts.group_items(APPLE_ID)]), ({"Анна", "Борис"}, ["Семья"]))
+        group = contacts.get_group(OWNER, family["id"])
+        contacts.update_group(OWNER, family["id"], {"hidden": True, "etag": group["etag"]})
+        self.sync()
+        self.assertEqual((set(self.theirs()), contacts.group_items(APPLE_ID)), ({"Борис"}, []))
+        self.assertEqual(self.sync(), {"to_book": 0, "to_icloud": 0, "conflicts": 0, "deleted": 0})
+        group = contacts.get_group(OWNER, family["id"])
+        contacts.update_group(OWNER, family["id"], {"hidden": False, "etag": group["etag"]})
+        self.sync()
+        self.assertEqual((set(self.theirs()), [g["name"] for g in contacts.group_items(APPLE_ID)]), ({"Анна", "Борис"}, ["Семья"]))
+        self.assertEqual(len(contacts.group_items(OWNER)), 1)
+
     def test_busy_and_reauth(self):
         self.connect()
         self.assertTrue(icloud_sync.lock(OWNER))

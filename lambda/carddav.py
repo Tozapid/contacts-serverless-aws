@@ -19,9 +19,10 @@ address book: vCards of the kind "group" that list the UIDs of their members
 (contacts.py, sk = GROUP#<id>). The etag of a card is its etag in the table, so
 If-Match works as the check of the page does. The sync token is the time of
 the latest change: a newer card is reported as changed, a newer DELETED# as
-gone. A hidden card (contacts.FLAGS) is not in the address book of the
-devices: it is gone as of its last change, and is back as changed when it
-is shown again. A change from a client is a version in the history like any
+gone. A hidden card (contacts.FLAGS), a hidden group and the cards in it
+are not in the address book of the devices: they are gone as of their last
+change, and are back as changed when they are shown again ("dav_at" of a
+card marks when a group hid it or gave it back). A change from a client is a version in the history like any
 other, with the action "sync".
 """
 
@@ -210,18 +211,31 @@ def etag_of(item):
     return '"%s"' % item.get("etag", "")
 
 
+def changed_at(item):
+    """When a card last changed for the devices: its own change, or a hidden
+    group that took it off them or gave it back."""
+    return max(item.get("modified", ""), item.get("dav_at", ""))
+
+
 def cards_by_name(owner):
     """Every resource of the address book by its name: the cards and Apple's
-    groups (an item of a group has "members"). Hidden cards are left out."""
-    resources = {card_name(item): item for item in contacts.all_current(owner) if not item.get("hidden")}
-    resources.update({card_name(item): item for item in contacts.group_items(owner)})
+    groups (an item of a group has "members"). Hidden cards and groups, and
+    the cards in a hidden group, are left out."""
+    groups = contacts.group_items(owner)
+    hidden = contacts.hidden_uids(owner, groups)
+    resources = {card_name(item): item for item in contacts.all_current(owner) if not contacts.is_hidden(item, hidden)}
+    resources.update({card_name(item): item for item in groups if not item.get("hidden")})
     return resources
 
 
 def hidden_cards(owner):
-    """Hidden cards as tombstones: gone from the devices since they changed."""
-    return [{"id": item["id"], "at": item.get("modified", ""), **contacts.dav_of(item)}
-            for item in contacts.all_current(owner, ["id", "modified", "dav", "hidden"]) if item.get("hidden")]
+    """Hidden cards and groups as tombstones: gone from the devices since
+    they changed."""
+    groups = contacts.group_items(owner)
+    hidden = contacts.hidden_uids(owner, groups)
+    cards = [{"id": item["id"], "at": changed_at(item), **contacts.dav_of(item)}
+             for item in contacts.all_current(owner, ["id", "uid", "modified", "dav_at", "dav", "hidden"]) if contacts.is_hidden(item, hidden)]
+    return cards + [{"id": item["id"], "at": item.get("modified", ""), **contacts.dav_of(item)} for item in groups if item.get("hidden")]
 
 
 def is_group_item(item):
@@ -636,7 +650,7 @@ SETTLE_SECONDS = 2
 def sync_token(owner, cards=None, gone=None):
     cards = cards if cards is not None else cards_by_name(owner)
     gone = gone if gone is not None else tombstones(owner)
-    times = [item.get("modified", "") for item in cards.values()] + [item.get("at", "") for item in gone]
+    times = [changed_at(item) for item in cards.values()] + [item.get("at", "") for item in gone]
     newest = max(times) if times else "0"
     settled = (datetime.now(timezone.utc) - timedelta(seconds=SETTLE_SECONDS)).isoformat(timespec="milliseconds").replace("+00:00", "Z")
     return sync_prefix() + min(newest, settled)
@@ -652,7 +666,7 @@ def sync_collection(root, wanted, owner):
         if not token.startswith(sync_prefix()):
             raise DavError(403, q(DAV, "valid-sync-token"))
         since = token[len(sync_prefix()):]
-    changed = sorted((name, item) for name, item in cards.items() if item.get("modified", "") > since)
+    changed = sorted((name, item) for name, item in cards.items() if changed_at(item) > since)
     removed = [status_response(href(card_name(item)), "404 Not Found") for item in gone if since and item.get("at", "") > since]
     responses, full = card_responses(changed, wanted, owner)
     _note.update({"changed": len(changed), "removed": len(removed)})

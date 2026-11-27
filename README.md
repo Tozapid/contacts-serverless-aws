@@ -33,7 +33,7 @@ The demo address book is English and made up. Everything on the page works: crea
 - **Duplicates** by a shared phone, a shared email or the same name; a merge keeps one card, fills it from the others and moves them to the trash, so it can be undone.
 - **Groups** as Apple keeps them, with a page per group, and the smart group "No group"; **family relations** in your own words that link cards, and a family graph.
 - **Dates kept out of the calendars**: a birthday goes to Google and the devices as a plain date labelled "Birthday (not in calendar)", and any other date as "Anniversary (not in calendar)" and the like (in Google a custom field, not an event), so no calendar shows them.
-- **Hidden cards**: kept only here; the sync deletes them from Google, iCloud and the devices, and sends them again when they are shown.
+- **Hidden cards and groups**: kept only here; the sync deletes them from Google, iCloud and the devices, and sends them again when they are shown. A hidden group takes its members with it, and a card added to it.
 - **vCard** 2.1, 3.0 and 4.0, in and out, with Apple's labels and the photos.
 - **Export** in Settings: every card as one vCard file, or the whole address book as a ZIP archive: the cards as vCard and with every field (JSON), every version of every card, the trash, the groups, drafts, the sync log and all the photos.
 - **Sync**: CardDAV for Apple Contacts, Thunderbird, Android (DAVx⁵) and Outlook (CalDav Synchronizer), with an app password per device and a profile for iPhone, iPad and Mac; Google Contacts through the People API; iCloud Contacts through its CardDAV server with an app-specific password. A sync log tells what changed where, and a sync with Google or iCloud that fails mails its user (production only).

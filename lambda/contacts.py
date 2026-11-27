@@ -824,9 +824,50 @@ def public_group(item, ids_by_uid):
         "id": item["id"],
         "name": item.get("name", ""),
         "members": [ids_by_uid[uid] for uid in item.get("members") or [] if uid in ids_by_uid],
+        "hidden": bool(item.get("hidden")),
         "etag": item.get("etag", ""),
         "modified": item.get("modified", ""),
     }
+
+
+# Hidden groups: a group marked hidden stays here only, with its members.
+# The syncs leave the group and every card in it out, as they do a hidden
+# card (FLAGS): Google, iCloud and the CardDAV devices lose them and get them
+# again when the group is shown, or when a card leaves it.
+
+def hidden_uids(owner, groups=None):
+    """The CardDAV UIDs of the cards in a hidden group."""
+    groups = group_items(owner) if groups is None else groups
+    return {uid for group in groups if group.get("hidden") for uid in group.get("members") or []}
+
+
+def is_hidden(item, hidden=frozenset()):
+    """A card kept out of the syncs: marked hidden, or in a hidden group
+    (hidden: the UIDs of hidden_uids)."""
+    return bool(item.get("hidden")) or dav_uid(item) in hidden
+
+
+def touch_cards(owner, uids, now=None):
+    """Cards that a hidden group took off the devices or gave back: the
+    CardDAV server reports them as changed (or gone) since now, "dav_at",
+    though the cards themselves did not change."""
+    if not uids:
+        return
+    now = now or now_iso()
+    for item in all_current(owner, ["id", "uid"]):
+        if dav_uid(item) not in uids:
+            continue
+        try:
+            table().update_item(
+                Key={"pk": user_pk(owner), "sk": "CONTACT#" + item["id"]},
+                UpdateExpression="SET #dav_at = :dav_at",
+                ConditionExpression="attribute_exists(pk)",
+                ExpressionAttributeNames={"#dav_at": "dav_at"},
+                ExpressionAttributeValues={":dav_at": now},
+            )
+        except Exception as exc:
+            if not conditional_failed(exc):
+                raise
 
 
 def list_groups(owner):
@@ -898,8 +939,16 @@ def update_group(owner, group_id, payload):
         current = set(uids.values())
         kept = [uid for uid in group.get("members") or [] if uid not in current]
         changes["members"] = kept + member_uids(owner, payload["members"])
+    if "hidden" in payload:
+        if not isinstance(payload["hidden"], bool):
+            raise ApiError(400, "bad_flag", "hidden")
+        changes["hidden"] = payload["hidden"]
     now = now_iso()
     transact([group_put(group, changes, now)])
+    # The cards that went off the devices or came back with this change.
+    before = set(group.get("members") or []) if group.get("hidden") else set()
+    after = set(changes.get("members", group.get("members") or [])) if changes.get("hidden", group.get("hidden")) else set()
+    touch_cards(owner, before ^ after, now)
     item = {**group, **changes, "modified": now}
     return public_group(get_group(owner, group_id) or item, {value: key for key, value in card_uids(owner).items()})
 
@@ -919,6 +968,9 @@ def delete_group(owner, group_id, etag=None):
         }},
         put_action({"pk": user_pk(owner), "sk": "GONE#" + group_id, "id": group_id, "at": now_iso(), **dav_of(group)}, None),
     ])
+    if group.get("hidden"):
+        # Its members go back to the devices.
+        touch_cards(owner, set(group.get("members") or []))
     return {"deleted": group_id}
 
 

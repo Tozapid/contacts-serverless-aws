@@ -30,6 +30,10 @@ data "archive_file" "api" {
     content  = file("${path.module}/lambda/icloud_sync.py")
     filename = "icloud_sync.py"
   }
+  source {
+    content  = file("${path.module}/lambda/backup.py")
+    filename = "backup.py"
+  }
   output_path      = "${path.root}/.build/${local.name}-api.zip"
   output_file_mode = "0644"
 }
@@ -79,6 +83,7 @@ resource "aws_lambda_function" "api" {
       GOOGLE_SYNC_FUNCTION      = local.google ? local.google_function : ""
       ICLOUD_PASSWORD_PREFIX    = local.icloud ? local.icloud_password_prefix : ""
       ICLOUD_SYNC_FUNCTION      = local.icloud ? local.icloud_function : ""
+      BACKUP_FUNCTION           = local.backup_function
       # The demo shows the sync with Google, iCloud and devices without
       # running it, and keeps the accounts as they are.
       DEMO = tostring(var.demo)

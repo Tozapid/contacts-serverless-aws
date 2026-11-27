@@ -647,7 +647,22 @@ table.diff ins { background: var(--ok-soft); color: var(--ok); }
 
 .deleted { list-style: none; margin: 0; padding: 0; }
 .deleted li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
-.deleted .ghost, .deleted .danger { padding: 4px 10px; font-size: 13px; }
+.deleted .ghost, .deleted .danger, .deleted .primary { padding: 4px 10px; font-size: 13px; }
+.deleted .actions { flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 640px) {
+  .deleted li { grid-template-columns: auto minmax(0, 1fr); }
+  .deleted .actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+
+/* A card kept out of the sync, and a date kept out of the calendars. */
+.badge.hidden-mark { background: var(--surface-2); color: var(--muted); margin-left: 6px; font-weight: 500; }
+p > .badge.hidden-mark { margin-left: 0; }
+.date-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+
+/* Settings → Export: the archive is a link that looks like a button. */
+a.primary { text-decoration: none; }
+.backup-status { display: grid; gap: 6px; }
+.backup-status p { margin: 0; }
 
 /* Dialogs: the head stays on top while the body scrolls. */
 dialog.modal { width: min(560px, calc(100% - 24px)); padding: 0; }
@@ -817,3 +832,45 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 /* 100vh is the height of the screen without the bars of a phone's browser;
    100dvh is what is seen, so a dialog keeps its title and buttons in view. */
 .dialog, dialog.modal { max-height: calc(100dvh - 32px); }
+
+/* Print -------------------------------------------------------------------
+   An open card prints alone: its photo and every field it has, without the
+   buttons, the list, the bar on top and the dialogs. With no card open the
+   list prints, names with their company or phone. Always light, and the
+   initials keep their circle. */
+@media print {
+  :root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f0f2f5;
+    --ink: #000000;
+    --muted: #4a4f59;
+    --line: #d5d9df;
+    --line-strong: #cbd0d8;
+    --accent-soft: #eef0fe;
+    --accent-text: #3730a3;
+  }
+  @page { margin: 15mm; }
+  body { background: #fff; color: #000; }
+  .top, .legal-foot, #about, .toast, .dialog-wrap, dialog,
+  .actions, .back, .icon-button, .star, .map-link, .list-tools, .found, .history-found, .new-draft,
+  .detail-pane .placeholder, .add-field, .add-row { display: none !important; }
+  .panes { display: block; padding: 0; max-width: none; }
+  .detail-open .list-pane { display: none !important; }
+  .app:not(.detail-open) .detail-pane { display: none !important; }
+  .list-pane { position: static; max-height: none; overflow: visible; border: 0; box-shadow: none; }
+  .detail-pane { display: block !important; }
+  .card { border: 0; box-shadow: none; padding: 0; background: none; }
+  .avatar-open { cursor: auto; }
+  .avatar, .badge { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .avatar.large { width: 96px; height: 96px; }
+  .values { grid-template-columns: 11em minmax(0, 1fr); }
+  .values dd { margin-bottom: 0; }
+  a { color: inherit; text-decoration: none; }
+  .card-head, .card-section, .contact-row { break-inside: avoid; }
+  .card-section h3 { break-after: avoid; }
+  .contact-row { padding: 4px 0; }
+  .contact-row.active { background: none; }
+  .letter { break-after: avoid; }
+}

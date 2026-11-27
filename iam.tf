@@ -27,6 +27,7 @@ data "aws_iam_policy_document" "lambda" {
       aws_cloudwatch_log_group.dav,
       aws_cloudwatch_log_group.google,
       aws_cloudwatch_log_group.icloud,
+      [aws_cloudwatch_log_group.backup],
     ) : "${group.arn}:*"]
   }
 
@@ -53,6 +54,8 @@ data "aws_iam_policy_document" "lambda" {
       "s3:PutObject",
       "s3:GetObject",
       "s3:DeleteObject",
+      # The archive of a full export goes up in parts.
+      "s3:AbortMultipartUpload",
     ]
     resources = [
       "${aws_s3_bucket.photos.arn}/photos/*",
@@ -103,6 +106,13 @@ data "aws_iam_policy_document" "lambda" {
       "ssm:DeleteParameter",
     ]
     resources = ["arn:aws:ssm:${local.region}:${local.account_id}:parameter${local.icloud_password_prefix}/*"]
+  }
+
+  # Settings → Export starts the function that builds the archive.
+  statement {
+    sid       = "StartBackup"
+    actions   = ["lambda:InvokeFunction"]
+    resources = ["arn:aws:lambda:${local.region}:${local.account_id}:function:${local.backup_function}"]
   }
 
   # "Sync now" and the sync after connecting start the iCloud sync function.

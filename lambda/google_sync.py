@@ -26,6 +26,10 @@ A sync compares each side with its own fingerprint: a side changed when its
 fingerprint differs. Comparing each side only with itself keeps a field that
 Google writes a little differently from going back and forth.
 
+A hidden card (contacts.FLAGS) is not synced, nor is a hidden group with
+the cards in it: they are deleted in Google, like a card or group deleted
+here, and go there as new when they are shown again.
+
 Every change is a line of the sync log (contacts.log_sync) and, for a card,
 a version in its history with the action "google".
 """
@@ -377,7 +381,8 @@ def contact_to_person(contact, group_resources):
     person["urls"] = [{"value": e["value"], "type": to_type("urls", e.get("label"))} for e in c.get("urls") or []]
     birthday = to_date(c.get("birthday"))
     person["birthdays"] = [{"date": birthday}] if birthday else []
-    person["events"] = [{"date": to_date(e["value"]), "type": to_type("dates", e.get("label"))} for e in c.get("dates") or [] if to_date(e.get("value"))]
+    person["events"] = [{"date": to_date(e["value"]), "type": to_type("dates", e.get("label"))}
+                        for e in c.get("dates") or [] if to_date(e.get("value")) and not e.get("hidden")]
     person["relations"] = [{"person": e["value"], "type": to_type("related", e.get("label"))} for e in c.get("related") or [] if e.get("value")]
     person["imClients"] = [{
         "username": e["value"], "type": to_type("im", e.get("label")),
@@ -387,8 +392,10 @@ def contact_to_person(contact, group_resources):
     person["userDefined"] = [{"key": e.get("label") or "other", "value": e["value"]} for e in c.get("custom") or []]
     # A custom field, not an event: the birthdays calendar of Google may show
     # the events of a contact too.
+    hidden = [{"key": vcard.hidden_date_label(e.get("label")), "value": e["value"]} for e in c.get("dates") or [] if e.get("hidden") and e.get("value")]
     if c.get("hidden_birthday"):
-        person["userDefined"].insert(0, {"key": vcard.hidden_birthday_label(), "value": c["hidden_birthday"]})
+        hidden.insert(0, {"key": vcard.hidden_birthday_label(), "value": c["hidden_birthday"]})
+    person["userDefined"] = hidden + person["userDefined"]
     person["biographies"] = [{"value": c["notes"], "contentType": "TEXT_PLAIN"}] if c.get("notes") else []
     memberships = [MY_CONTACTS, *sorted(group_resources)]
     if c.get("starred"):
@@ -444,11 +451,18 @@ def person_to_contact(person):
         "label": from_type("im", e.get("type")), "value": e["username"],
     } for e in own(person.get("imClients")) if e.get("username")]
     c["im"] += [{"service": "SIP", "label": from_type("im", e.get("type")), "value": e["value"]} for e in own(person.get("sipAddresses")) if e.get("value")]
-    custom = [e for e in own(person.get("userDefined")) if e.get("value")]
-    hidden = next((vcard.parse_date(e["value"]) for e in custom if vcard.is_hidden_birthday(e.get("key"))), "")
-    if hidden:
-        c["hidden_birthday"] = hidden
-    c["custom"] = [{"label": e.get("key") or "other", "value": e["value"]} for e in custom if not vcard.is_hidden_birthday(e.get("key"))]
+    c["custom"] = []
+    for e in own(person.get("userDefined")):
+        if not e.get("value"):
+            continue
+        date = vcard.parse_date(e["value"])
+        label = vcard.hidden_date_of(e.get("key")) if date else None
+        if date and vcard.is_hidden_birthday(e.get("key")) and not c.get("hidden_birthday"):
+            c["hidden_birthday"] = date
+        elif label is not None:
+            c["dates"].append({"label": label, "value": date, "hidden": True})
+        else:
+            c["custom"].append({"label": e.get("key") or "other", "value": e["value"]})
     if own(person.get("biographies")):
         c["notes"] = own(person["biographies"])[0].get("value", "")
     groups = []
@@ -604,6 +618,7 @@ class Run:
         self.sync_token = state.get("sync_token", "")
         self.group_state = dict(state.get("groups") or {})
         self.links = {}
+        self.hidden = set()
         self.writes = 0
         self.summary = {"to_book": 0, "to_google": 0, "conflicts": 0, "deleted": 0}
 
@@ -617,7 +632,12 @@ class Run:
 
     def go(self):
         self.token = access_token(self.owner)
-        self.cards = {item["id"]: contacts.plain(item) for item in contacts.all_current(self.owner)}
+        # Hidden cards are not synced: push() deletes them in Google as if
+        # they were deleted here.
+        every = [contacts.plain(item) for item in contacts.all_current(self.owner)]
+        hidden = contacts.hidden_uids(self.owner)
+        self.cards = {item["id"]: item for item in every if not contacts.is_hidden(item, hidden)}
+        self.hidden = {item["id"] for item in every if contacts.is_hidden(item, hidden)}
         self.links = {item["id"]: contacts.plain(item) for item in link_items(self.owner)}
         self.sync_groups()
         people, full = self.changed_people()
@@ -638,7 +658,8 @@ class Run:
             page_token = answer.get("nextPageToken")
             if not page_token:
                 break
-        local = {item["id"]: contacts.plain(item) for item in contacts.group_items(self.owner)}
+        # A hidden group is not synced: deleted in Google like a group deleted here.
+        local = {item["id"]: contacts.plain(item) for item in contacts.group_items(self.owner) if not item.get("hidden")}
         state = self.group_state
         for group_id, known in list(state.items()):
             mine, theirs = local.get(group_id), remote.get(known["resource"])
@@ -880,7 +901,8 @@ class Run:
                 link = self.links.pop(card_id)
                 contacts.table().delete_item(Key={"pk": contacts.user_pk(self.owner), "sk": "GLINK#" + card_id})
                 self.summary["to_google"] += 1
-                contacts.log_sync(self.owner, "to_google", "deleted", target="google", name=link.get("name", ""), contact_id=card_id)
+                contacts.log_sync(self.owner, "to_google", "deleted", target="google", name=link.get("name", ""), contact_id=card_id,
+                                  detail="hidden" if card_id in self.hidden else "")
         for start in range(0, len(creates), BATCH):
             if self.writes >= WRITES_PER_SYNC:
                 return

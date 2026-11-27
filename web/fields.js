@@ -28,7 +28,10 @@ window.CONTACT_FIELDS = {
   ],
   // Lists of labelled values. "parts" are the inputs of one row; "labels" the
   // labels to choose from (a label of one's own is always possible);
-  // "services" the services to choose from.
+  // "services" the services to choose from. The editor shows the lists an
+  // address book usually has filled in (phones, emails, addresses, with the
+  // birthday and the notes); "extra" ones wait, as the extra name fields
+  // do, until they have a value or are added with "Add field".
   lists: {
     phones: {
       parts: [{ key: "value", type: "tel", autocomplete: "tel" }],
@@ -51,28 +54,34 @@ window.CONTACT_FIELDS = {
       labels: ["home", "work", "school", "other"],
     },
     urls: {
+      extra: true,
       parts: [{ key: "value", type: "url" }],
       labels: ["homepage", "home", "work", "school", "blog", "profile", "other"],
     },
     dates: {
+      extra: true,
       parts: [{ key: "value", date: true }],
       labels: ["anniversary", "other"],
     },
     related: {
+      extra: true,
       parts: [{ key: "value" }],
       labels: ["mother", "father", "parent", "brother", "sister", "child", "son", "daughter", "spouse", "husband", "wife",
         "partner", "friend", "assistant", "manager", "other"],
     },
     im: {
+      extra: true,
       parts: [{ key: "value" }],
       services: ["Telegram", "WhatsApp", "Signal", "Skype", "Facebook", "Jabber", "Google Talk", "SIP", "ICQ", "AIM", "Yahoo", "MSN", "QQ", "Gadu-Gadu"],
       labels: ["home", "work", "other"],
     },
     social: {
+      extra: true,
       parts: [{ key: "user" }, { key: "url", type: "url" }],
       services: ["Telegram", "Facebook", "Instagram", "LinkedIn", "X", "Twitter", "VK", "GitHub", "Mastodon", "Threads", "Flickr", "Myspace", "Sina Weibo", "Yelp"],
     },
     custom: {
+      extra: true,
       parts: [{ key: "value" }],
       labels: [],
     },

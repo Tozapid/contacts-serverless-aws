@@ -193,6 +193,60 @@ class CardDavTest(unittest.TestCase):
         item = contacts.get_current(OWNER, made["id"])
         self.assertEqual((item["title"], item["hidden_birthday"], item.get("birthday")), ("Врач", "--05-04", None))
 
+    def test_a_hidden_card_leaves_the_devices(self):
+        made = self.page_contact()
+        ask = '<d:sync-collection xmlns:d="DAV:"><d:sync-token>{}</d:sync-token><d:prop><d:getetag/></d:prop></d:sync-collection>'
+        token = self.xml(self.call("REPORT", "/dav/home/contacts/", ask.format(""))).findtext("d:sync-token", namespaces=NS)
+        time.sleep(0.005)
+        hidden = contacts.save_contact(OWNER, made["id"], {**contacts.public_contact(contacts.get_current(OWNER, made["id"])), "hidden": True})
+        # The token is never newer than a moment ago (SETTLE_SECONDS).
+        token = token if token[len(carddav.sync_prefix()):] < hidden["modified"] else carddav.sync_prefix() + made["created"]
+        root = self.xml(self.call("REPORT", "/dav/home/contacts/", ask.format(token)))
+        self.assertEqual(root.findtext("d:response/d:status", namespaces=NS), "HTTP/1.1 404 Not Found")
+        self.assertEqual(self.call("GET", f"/dav/home/contacts/{made['id']}.vcf")["statusCode"], 404)
+        # A device that has not heard yet cannot write it back as a new card.
+        text = vcard.contact_to_card({**hidden, "company": "Ромашка"})
+        self.assertEqual(self.call("PUT", f"/dav/home/contacts/{made['id']}.vcf", text)["statusCode"], 412)
+        self.assertEqual([item["id"] for item in contacts.all_current(OWNER)], [made["id"]])
+        # Shown again: back as a changed card.
+        time.sleep(0.005)
+        shown = contacts.save_contact(OWNER, made["id"], {**hidden, "hidden": False})
+        root = self.xml(self.call("REPORT", "/dav/home/contacts/", ask.format(carddav.sync_prefix() + hidden["modified"])))
+        self.assertEqual(root.findtext("d:response/d:propstat/d:prop/d:getetag", namespaces=NS), f'"{shown["etag"]}"')
+
+    def test_a_hidden_group_leaves_the_devices_with_its_cards(self):
+        anna = self.page_contact(first="Анна")
+        boris = self.page_contact(first="Борис")
+        family = contacts.create_group(OWNER, {"name": "Семья", "members": [anna["id"]]})
+        ask = '<d:sync-collection xmlns:d="DAV:"><d:sync-token>{}</d:sync-token><d:prop><d:getetag/></d:prop></d:sync-collection>'
+        since = carddav.sync_prefix() + contacts.get_group(OWNER, family["id"])["modified"]
+        time.sleep(0.005)
+        group = contacts.get_group(OWNER, family["id"])
+        contacts.update_group(OWNER, family["id"], {"hidden": True, "etag": group["etag"]})
+        root = self.xml(self.call("REPORT", "/dav/home/contacts/", ask.format(since)))
+        gone = {node.findtext("d:href", namespaces=NS) for node in root.findall("d:response", NS) if node.findtext("d:status", namespaces=NS) == "HTTP/1.1 404 Not Found"}
+        self.assertEqual(gone, {f"/dav/home/contacts/{anna['id']}.vcf", f"/dav/home/contacts/{family['id']}.vcf"})
+        self.assertEqual(self.call("GET", f"/dav/home/contacts/{anna['id']}.vcf")["statusCode"], 404)
+        self.assertEqual(self.call("GET", f"/dav/home/contacts/{boris['id']}.vcf")["statusCode"], 200)
+        # Shown again: Анна comes back as changed, though her card did not change.
+        hidden_at = contacts.get_group(OWNER, family["id"])["modified"]
+        time.sleep(0.005)
+        group = contacts.get_group(OWNER, family["id"])
+        contacts.update_group(OWNER, family["id"], {"hidden": False, "etag": group["etag"]})
+        root = self.xml(self.call("REPORT", "/dav/home/contacts/", ask.format(carddav.sync_prefix() + hidden_at)))
+        back = {node.findtext("d:href", namespaces=NS) for node in root.findall("d:response", NS) if node.find("d:propstat", NS) is not None}
+        self.assertEqual(back, {f"/dav/home/contacts/{anna['id']}.vcf", f"/dav/home/contacts/{family['id']}.vcf"})
+        self.assertEqual(contacts.get_current(OWNER, anna["id"])["modified"], anna["modified"])
+
+    def test_a_client_keeps_hidden_dates(self):
+        made = self.page_contact(dates=[{"label": "anniversary", "value": "2010-06-01", "hidden": True}])
+        text = self.call("GET", f"/dav/home/contacts/{made['id']}.vcf")["body"]
+        edited = "\r\n".join(line for line in text.split("\r\n") if not line.startswith("item1."))
+        result = self.call("PUT", f"/dav/home/contacts/{made['id']}.vcf", edited.replace("FN:", "TITLE:Врач\r\nFN:"), {"if-match": f'"{made["etag"]}"'})
+        self.assertEqual(result["statusCode"], 204, result["body"])
+        item = contacts.plain(contacts.get_current(OWNER, made["id"]))
+        self.assertEqual((item["title"], item["dates"]), ("Врач", [{"label": "anniversary", "value": "2010-06-01", "hidden": True}]))
+
     def test_multiget(self):
         made = self.page_contact()
         body = (f'<card:addressbook-multiget xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav"><d:prop><d:getetag/><card:address-data/></d:prop>'

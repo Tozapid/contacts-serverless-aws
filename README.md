@@ -8,7 +8,9 @@ Everything is Terraform and AWS managed services: no servers, nothing running be
 
 **A history of changes you can read.** Apps on a phone get full access to the contacts, and they rewrite the cards their own way: dates and phone numbers in another format, advertising added to a note, now and then an important entry lost. Here every change is a version of the whole card with where it came from — the page, an import, a device over CardDAV (by its name), Google or iCloud. The sync log shows what changed where, and any version, or a deleted card, comes back with one click.
 
-**A birthday calendar without unwanted greetings.** Not everyone in an address book is someone to congratulate, and their entries still must not be deleted. One checkbox by the birthday takes a person out of the birthday calendars of Google and Apple; the date stays on the card and goes to the devices as a plain labelled date.
+**A birthday calendar without unwanted greetings.** Not everyone in an address book is someone to congratulate, and their entries still must not be deleted. One checkbox by the birthday, or by any other date, takes it out of the calendars of Google and Apple; the date stays on the card and goes to the devices as a plain labelled date.
+
+**Contacts that stay off the phones.** A card marked hidden stays in the address book with its history, and the sync takes it off Google, iCloud and the CardDAV devices; with the mark off, it goes back to them.
 
 **No third-party apps.** Every sync runs in the cloud. iPhone, iPad and Mac add the address book as their own CardDAV account (or get it through iCloud); Android and Gmail get the contacts through Google Contacts. The address book is the source of truth: it keeps every field, and a card changed on both sides keeps its version here.
 
@@ -22,14 +24,18 @@ The demo address book is English and made up. Everything on the page works: crea
 
 ## Features
 
-- **Cards** with every field of Apple and Google: name with pronunciation, maiden name, nickname, "file as", pronouns, work, phones, emails, addresses, websites, birthday (the year may be left out), dates, related people, messengers, social profiles, custom fields, favourites, notes and a photo (from a file or pasted from the clipboard, shrunk to 1024 points by the browser, opened full size on a click).
-- **History**: every create, save, delete, restore, import and sync keeps the whole card; the differences between versions, a restore of any version, deleted cards to restore or purge.
+- **Cards** with every field of Apple and Google: name with pronunciation, maiden name, nickname, "file as", pronouns, work, phones, emails, addresses, websites, birthday (the year may be left out), dates, related people, messengers, social profiles, custom fields, favourites, notes and a photo (from a file or pasted from the clipboard, shrunk to 1024 points by the browser, opened full size on a click). The editor shows the fields an address book usually has (name, company and title, phones, emails, addresses, birthday, notes); the others are a click away in "Add field" and show by themselves once they have a value, or at once when the book fills them often (in a fifth of the 100 cards changed last).
+- **List** sorted by last name, by first name or by the last change.
+- **History**: every create, save, delete, restore, import and sync keeps the whole card; the differences between versions, a restore of any version.
+- **Trash** in Settings: deleted cards as they were, searched across every field, restored with one click or deleted for good with their history.
 - **Search** across every field as you type, phone numbers by their digits, in the other keyboard layout too (`Jkmuf` finds "Ольга"); a switch searches the history and the deleted cards.
 - **Drafts** kept on the server: an unsaved edit comes back after a reload or on another device.
-- **Duplicates** by a shared phone, a shared email or the same name; a merge keeps one card, fills it from the others and moves them to Deleted, so it can be undone.
+- **Duplicates** by a shared phone, a shared email or the same name; a merge keeps one card, fills it from the others and moves them to the trash, so it can be undone.
 - **Groups** as Apple keeps them, with a page per group, and the smart group "No group"; **family relations** in your own words that link cards, and a family graph.
-- **A birthday kept out of the calendars**: it goes to Google and the devices as a plain date labelled "Birthday (not in calendar)", so their birthday calendars leave the card out.
+- **Dates kept out of the calendars**: a birthday goes to Google and the devices as a plain date labelled "Birthday (not in calendar)", and any other date as "Anniversary (not in calendar)" and the like (in Google a custom field, not an event), so no calendar shows them.
+- **Hidden cards and groups**: kept only here; the sync deletes them from Google, iCloud and the devices, and sends them again when they are shown. A hidden group takes its members with it, and a card added to it.
 - **vCard** 2.1, 3.0 and 4.0, in and out, with Apple's labels and the photos.
+- **Export** in Settings: every card as one vCard file, or the whole address book as a ZIP archive: the cards as vCard and with every field (JSON), every version of every card, the trash, the groups, drafts, the sync log and all the photos.
 - **Sync**: CardDAV for Apple Contacts, Thunderbird, Android (DAVx⁵) and Outlook (CalDav Synchronizer), with an app password per device and a profile for iPhone, iPad and Mac; Google Contacts through the People API; iCloud Contacts through its CardDAV server with an app-specific password. A sync log tells what changed where, and a sync with Google or iCloud that fails mails its user (production only).
 - **Account**: two-factor authentication (TOTP), password change; English, Russian, French and Italian; administrators invite and manage the users.
 
@@ -54,16 +60,17 @@ flowchart LR
 | Page | S3 + CloudFront, on its own domain or on the `*.cloudfront.net` address |
 | Sign-in | Cognito user pool, no self sign-up, optional TOTP; group `admins` |
 | API | API Gateway HTTP API with a Cognito JWT authorizer, Lambda `lambda/contacts.py` (Python, arm64) |
-| Data | DynamoDB on demand, one table, a partition per user: cards, versions, deleted cards, drafts, groups, app passwords, sync state and log |
+| Data | DynamoDB on demand, one table, a partition per user: cards, versions, the trash, drafts, groups, app passwords, sync state and log |
 | Photos | a private S3 bucket under `photos/<user>/`, served by CloudFront with signed cookies for that prefix only |
 | CardDAV | `lambda/carddav.py` on an HTTP API of its own (`dav_domain_name`): CloudFront does not pass `PROPFIND` and `REPORT` |
 | Google | `lambda/google_sync.py`, EventBridge every `google_sync_minutes` |
 | iCloud | `lambda/icloud_sync.py`, a CardDAV client of iCloud, EventBridge every `icloud_sync_minutes` |
+| Full export | `lambda/backup.py`, a function the API starts in the background; the archive goes to `exports/` of the photos bucket for a day |
 | Demo reset | `lambda/reset.py`, a one-off EventBridge Scheduler schedule that the first change makes |
 
 ### Sync
 
-Each side of a sync is compared with its own fingerprint at the last sync, so a field that Google or iCloud writes a little differently does not go back and forth. A card changed on both sides keeps its version here, which goes out again; the other version is in the sync log as a conflict. A field the other side has no place for, or that a device dropped, stays here. A contact deleted on the other side goes to Deleted here and can be restored. The first sync matches the contacts that are on both sides by UID, then by name and a shared phone or email (a card without a name, by a shared email or phone).
+Each side of a sync is compared with its own fingerprint at the last sync, so a field that Google or iCloud writes a little differently does not go back and forth. A card changed on both sides keeps its version here, which goes out again; the other version is in the sync log as a conflict. A field the other side has no place for, or that a device dropped, stays here. A contact deleted on the other side goes to the trash here and can be restored. A hidden card is deleted on the other side as if it were deleted here, and goes there as new when it is shown again. The first sync matches the contacts that are on both sides by UID, then by name and a shared phone or email (a card without a name, by a shared email or phone).
 
 Google needs a web application OAuth client of a Google Cloud project with the People API: its id is `google_client_id`, its secret goes into the SSM SecureString `/<name>/google-client-secret` by hand, and the consent page comes back to `/api/oauth/google`. iCloud needs nothing in AWS: each user enters the Apple ID and an app-specific password (account.apple.com → Sign-In and Security → App-Specific Passwords), kept in SSM per user.
 
@@ -84,7 +91,7 @@ The root of this repository is the module. It makes no providers: the caller pas
 
 ```hcl
 module "contacts" {
-  source = "git::https://github.com/Tozapid/contacts-serverless-aws.git?ref=v0.5.0"
+  source = "git::https://github.com/Tozapid/contacts-serverless-aws.git?ref=v0.6.0"
 
   providers = {
     aws        = aws

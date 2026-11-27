@@ -65,12 +65,18 @@ class FakeTable:
             return {"Count": len(items)}
         return {"Items": items[:kwargs.get("Limit", len(items))]}
 
-    def update_item(self, Key, UpdateExpression, ConditionExpression, ExpressionAttributeValues):
+    def update_item(self, Key, UpdateExpression, ConditionExpression, ExpressionAttributeValues, ExpressionAttributeNames=None):
         item = self.items.get((Key["pk"], Key["sk"]))
         if item is None:
             raise ConditionFailed()
-        assert UpdateExpression == "SET used = :u"
-        item["used"] = ExpressionAttributeValues[":u"]
+        if UpdateExpression == "SET used = :u":
+            item["used"] = ExpressionAttributeValues[":u"]
+            return
+        # SET #a = :a, #b = :b with the names given.
+        assert ConditionExpression == "attribute_exists(pk)", ConditionExpression
+        for part in UpdateExpression.removeprefix("SET ").split(", "):
+            name, value = part.split(" = ")
+            item[ExpressionAttributeNames[name]] = ExpressionAttributeValues[value]
 
     def batch_writer(self):
         table = self
@@ -145,6 +151,10 @@ class FakeS3:
 
     def delete_object(self, Bucket, Key):
         self.objects.pop(Key, None)
+
+    def upload_file(self, Filename, Bucket, Key, ExtraArgs=None):
+        with open(Filename, "rb") as file:
+            self.objects[Key] = (file.read(), (ExtraArgs or {}).get("ContentType", "binary/octet-stream"))
 
     def delete_objects(self, Bucket, Delete):
         for obj in Delete["Objects"]:
@@ -294,6 +304,75 @@ class ApiTest(unittest.TestCase):
         self.assertEqual((status, saved["birthday"], saved.get("hidden_birthday")), (200, "1990-05-04", None))
         status, data = self.call("POST", "/api/contacts", {"first": "A", "hidden_birthday": "1990-13-01"})
         self.assertEqual((status, data["detail"]), (400, "hidden_birthday"))
+
+    def test_hidden_dates(self):
+        made = self.create(dates=[{"label": "anniversary", "value": "2010-06-01", "hidden": True}, {"label": "Свадьба", "value": "--07-08", "hidden": True},
+                                  {"label": "other", "value": "2001-01-02", "hidden": False}])
+        self.assertEqual(made["dates"], [{"label": "anniversary", "value": "2010-06-01", "hidden": True}, {"label": "Свадьба", "value": "--07-08", "hidden": True},
+                                         {"label": "other", "value": "2001-01-02"}])
+        card = vcard.contact_to_card(made, None, []).replace("\r\n ", "")
+        self.assertIn("item1.X-ABDATE:2010-06-01\r\nitem1.X-ABLabel:Anniversary (not in calendar) - managed by contacts.example.com, do not edit", card)
+        self.assertIn("item2.X-ABDATE:1604-07-08\r\nitem2.X-ABLabel:Свадьба (not in calendar) - managed by contacts.example.com, do not edit", card)
+        self.assertIn("item3.X-ABDATE:2001-01-02\r\nitem3.X-ABLabel:_$!<Other>!$_", card)
+        back, _ = vcard.card_to_contact(vcard.split_cards(card)[0])
+        self.assertEqual(back["dates"], made["dates"])
+        # A label written under another domain still counts.
+        other, _ = vcard.card_to_contact(vcard.split_cards("BEGIN:VCARD\r\nVERSION:3.0\r\nFN:A\r\nitem1.X-ABDATE:2010-06-01\r\n"
+                                                           "item1.X-ABLabel:Anniversary (not in calendar) - managed by other.example.com\\, do not edit\r\nEND:VCARD\r\n")[0])
+        self.assertEqual(other["dates"], [{"label": "anniversary", "value": "2010-06-01", "hidden": True}])
+        status, data = self.call("POST", "/api/contacts", {"first": "A", "dates": [{"value": "2010-06-01", "hidden": "yes"}]})
+        self.assertEqual((status, data["code"], data["detail"]), (400, "bad_flag", "dates"))
+        # A switch alone is no entry.
+        self.assertEqual(self.create(dates=[{"label": "other", "hidden": True}])["dates"], [])
+
+    def test_hidden_card(self):
+        made = self.create()
+        self.assertIs(made["hidden"], False)
+        status, saved = self.call("PUT", f"/api/contacts/{made['id']}", {**made, "hidden": True})
+        self.assertEqual((status, saved["hidden"]), (200, True))
+        _, revs = self.call("GET", f"/api/contacts/{made['id']}/revisions")
+        self.assertEqual(revs["items"][0]["changes"], ["hidden"])
+        # A vCard file knows nothing of it: an import over the card keeps it.
+        result = contacts.import_vcards(OWNER, {"vcf": vcard.contact_to_card({**saved, "company": "Ромашка"}, None, [])})
+        self.assertEqual(result["updated"], 1)
+        self.assertEqual((contacts.get_current(OWNER, made["id"])["company"], contacts.get_current(OWNER, made["id"])["hidden"]), ("Ромашка", True))
+        self.assertNotIn("hidden", vcard.contact_to_card(saved, None, []).lower().replace("not in calendar", ""))
+        status, data = self.call("PUT", f"/api/contacts/{made['id']}", {**saved, "hidden": "yes"})
+        self.assertEqual((status, data["code"], data["detail"]), (400, "bad_flag", "hidden"))
+
+    def test_hidden_group(self):
+        anna, boris = self.create(), self.create(first="Борис")
+        status, group = self.call("POST", "/api/groups", {"name": "Семья", "members": [anna["id"]]})
+        self.assertIs(group["hidden"], False)
+        status, group = self.call("PUT", f"/api/groups/{group['id']}", {"hidden": True, "etag": group["etag"]})
+        self.assertEqual((status, group["hidden"]), (200, True))
+        hidden = contacts.hidden_uids(OWNER)
+        self.assertEqual([contacts.is_hidden(contacts.get_current(OWNER, card["id"]), hidden) for card in (anna, boris)], [True, False])
+        self.assertTrue(contacts.get_current(OWNER, anna["id"])["dav_at"])
+        self.assertNotIn("dav_at", contacts.get_current(OWNER, boris["id"]))
+        status, data = self.call("PUT", f"/api/groups/{group['id']}", {"hidden": "yes", "etag": group["etag"]})
+        self.assertEqual((status, data["code"]), (400, "bad_flag"))
+
+    def test_trash_keeps_the_card_to_search_and_restore(self):
+        made = self.create(company="Ромашка", phones=[{"label": "mobile", "value": "+7 916 123-45-67"}], notes="с дачи")
+        self.call("DELETE", f"/api/contacts/{made['id']}", params={"etag": made["etag"]})
+        _, deleted = self.call("GET", "/api/deleted")
+        item = deleted["items"][0]
+        self.assertEqual((item["card"]["company"], item["card"]["notes"], item["card"]["phones"][0]["value"]), ("Ромашка", "с дачи", "+7 916 123-45-67"))
+        self.assertTrue(item["revision"].startswith(f"REV#{made['id']}#"))
+        status, back = self.call("POST", f"/api/contacts/{made['id']}/restore", {"revision": item["revision"]})
+        self.assertEqual((status, back["company"], back["notes"]), (200, "Ромашка", "с дачи"))
+        # A card deleted before the trash kept the card gets it from its
+        # newest version, once.
+        self.call("DELETE", f"/api/contacts/{made['id']}", params={"etag": back["etag"]})
+        key = ("USER#" + OWNER, "DELETED#" + made["id"])
+        for name in ("card", "revision"):
+            self.table.items[key].pop(name)
+        _, deleted = self.call("GET", "/api/deleted")
+        self.assertEqual(deleted["items"][0]["card"]["company"], "Ромашка")
+        self.assertEqual(self.table.items[key]["card"]["notes"], "с дачи")
+        _, revs = self.call("GET", f"/api/contacts/{made['id']}/revisions")
+        self.assertEqual((deleted["items"][0]["revision"], revs["items"][0]["action"]), (revs["items"][0]["revision"], "delete"))
 
     def test_empty_rows_are_dropped(self):
         made = self.create(phones=[{"label": "home", "value": " "}], addresses=[{"label": "home", "country_code": "ru"}])

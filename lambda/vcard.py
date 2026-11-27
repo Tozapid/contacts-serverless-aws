@@ -77,6 +77,34 @@ def is_hidden_birthday(label):
     return label.startswith(HIDDEN_BIRTHDAY_TITLE.casefold())
 
 
+# Any other date kept out of the calendars (dates with "hidden"): the same
+# kind of label, with the label of the date in front, such as "Anniversary
+# (not in calendar) - managed by ...". Google's birthdays calendar shows the
+# events of a contact too, so such a date is not an event there either.
+HIDDEN_MARK = " (not in calendar)"
+HIDDEN_DATE_RE = re.compile(r"^(.+?) \(not in calendar\)(?: - managed by .*)?$", re.I | re.S)
+DATE_TITLES = {"anniversary": "Anniversary", "other": "Other"}
+
+
+def hidden_date_label(label):
+    label = str(label or "other").strip() or "other"
+    title = DATE_TITLES.get(label, label)
+    return f"{title}{HIDDEN_MARK} - managed by {site_domain()}, do not edit"
+
+
+def hidden_date_of(label):
+    """The label of a date kept out of the calendars, from the label it went
+    out with; None for a label of another kind."""
+    match = HIDDEN_DATE_RE.match(str(label or "").strip())
+    if not match:
+        return None
+    title = match.group(1).strip()
+    for key, known in DATE_TITLES.items():
+        if title.casefold() == known.casefold():
+            return key
+    return title
+
+
 # Reading -------------------------------------------------------------------
 
 def split_cards(text):
@@ -342,8 +370,11 @@ def card_to_contact(props):
         elif name == "X-ABDATE":
             date = parse_date(value)
             label = labels.get(group, "other") if group else "other"
-            if date and is_hidden_birthday(label):
+            hidden = hidden_date_of(label) if date else None
+            if date and is_hidden_birthday(label) and not contact.get("hidden_birthday"):
                 contact["hidden_birthday"] = date
+            elif date and hidden is not None:
+                contact["dates"].append({"label": hidden, "value": date, "hidden": True})
             elif date:
                 contact["dates"].append({"label": label, "value": date})
         elif name in ("X-ABRELATEDNAMES", "RELATED"):
@@ -556,7 +587,8 @@ def contact_to_card(contact, photo=None, categories=()):
         date = entry["value"]
         if date.startswith("--"):
             date = NO_YEAR + date[1:]
-        grouped("X-ABDATE", date, entry.get("label") or "other")
+        label = entry.get("label") or "other"
+        grouped("X-ABDATE", date, hidden_date_label(label) if entry.get("hidden") else label)
     for entry in contact.get("related", []):
         grouped("X-ABRELATEDNAMES", escape_text(entry["value"]), entry.get("label") or "other")
     for entry in contact.get("social", []):

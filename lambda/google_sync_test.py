@@ -124,9 +124,9 @@ class FakeSsm:
 
 
 class LockingTable(fakes.FakeTable):
-    def update_item(self, Key, UpdateExpression, ConditionExpression, ExpressionAttributeValues):
-        if UpdateExpression == "SET used = :u":
-            return super().update_item(Key, UpdateExpression, ConditionExpression, ExpressionAttributeValues)
+    def update_item(self, Key, UpdateExpression, ConditionExpression, ExpressionAttributeValues, ExpressionAttributeNames=None):
+        if "lock_until" not in UpdateExpression:
+            return super().update_item(Key, UpdateExpression, ConditionExpression, ExpressionAttributeValues, ExpressionAttributeNames)
         item = self.items.get((Key["pk"], Key["sk"]))
         if item is None or int(item.get("lock_until") or 0) >= ExpressionAttributeValues[":now"]:
             raise fakes.ConditionFailed()
@@ -274,6 +274,65 @@ class GoogleSyncTest(unittest.TestCase):
         self.sync()
         card = self.cards()["Анна"]
         self.assertEqual((card["company"], card["hidden_birthday"], card.get("birthday"), card.get("custom") or []), ("Ромашка", "1990-05-04", None, []))
+
+    def test_hidden_dates_leave_the_events(self):
+        contacts.create_contact(OWNER, {"first": "Анна", "dates": [{"label": "anniversary", "value": "2010-06-01", "hidden": True},
+                                                                    {"label": "other", "value": "--02-03"}]})
+        self.sync()
+        person = next(iter(self.people.people.values()))
+        self.assertEqual(person["events"], [{"date": {"month": 2, "day": 3}, "type": "other"}])
+        self.assertEqual(person["userDefined"], [{"key": "Anniversary (not in calendar) - managed by contacts.example.com, do not edit", "value": "2010-06-01"}])
+        self.assertEqual(self.sync()["to_google"], 0)
+        # Google's next change keeps the date here, still hidden.
+        resource = next(iter(self.people.people))
+        self.people.edit(resource, lambda p: p.update(organizations=[{"name": "Ромашка"}]))
+        self.sync()
+        card = self.cards()["Анна"]
+        self.assertEqual((card["company"], card.get("custom") or []), ("Ромашка", []))
+        self.assertEqual(sorted(card["dates"], key=lambda e: e["value"]), [{"label": "other", "value": "--02-03"},
+                                                                             {"label": "anniversary", "value": "2010-06-01", "hidden": True}])
+
+    def test_hidden_card_leaves_google_and_comes_back(self):
+        made = contacts.create_contact(OWNER, {"first": "Анна"})
+        contacts.create_contact(OWNER, {"first": "Борис"})
+        self.sync()
+        self.assertEqual(len(self.people.people), 2)
+        card = contacts.get_current(OWNER, made["id"])
+        contacts.save_contact(OWNER, made["id"], {**contacts.public_contact(card), "hidden": True})
+        self.sync()
+        self.assertEqual([p["names"][0]["givenName"] for p in self.people.people.values()], ["Борис"])
+        line = next(line for line in self.log() if line["source"] == "to_google" and line["action"] == "deleted")
+        self.assertEqual(line["detail"], "hidden")
+        # The card stays here, hidden; the next syncs leave it be.
+        self.assertEqual(self.sync(), {"to_book": 0, "to_google": 0, "conflicts": 0, "deleted": 0})
+        self.assertTrue(self.cards()["Анна"]["hidden"])
+        card = contacts.get_current(OWNER, made["id"])
+        contacts.save_contact(OWNER, made["id"], {**contacts.public_contact(card), "hidden": False})
+        self.sync()
+        self.assertEqual(sorted(p["names"][0]["givenName"] for p in self.people.people.values()), ["Анна", "Борис"])
+        self.assertEqual(set(self.cards()), {"Анна", "Борис"})
+
+    def test_a_hidden_group_leaves_google_with_its_cards(self):
+        anna = contacts.create_contact(OWNER, {"first": "Анна"})
+        contacts.create_contact(OWNER, {"first": "Борис"})
+        family = contacts.create_group(OWNER, {"name": "Семья", "members": [anna["id"]]})
+        self.sync()
+        self.assertEqual(len(self.people.people), 2)
+        self.assertIn("Семья", [group["name"] for group in self.people.groups.values()])
+        group = contacts.get_group(OWNER, family["id"])
+        contacts.update_group(OWNER, family["id"], {"hidden": True, "etag": group["etag"]})
+        self.sync()
+        self.assertEqual([p["names"][0]["givenName"] for p in self.people.people.values()], ["Борис"])
+        self.assertNotIn("Семья", [group["name"] for group in self.people.groups.values()])
+        self.assertEqual(set(self.cards()), {"Анна", "Борис"})
+        self.assertEqual(self.sync(), {"to_book": 0, "to_google": 0, "conflicts": 0, "deleted": 0})
+        # Shown again: the group and Анна go back.
+        group = contacts.get_group(OWNER, family["id"])
+        contacts.update_group(OWNER, family["id"], {"hidden": False, "etag": group["etag"]})
+        self.sync()
+        self.assertEqual(sorted(p["names"][0]["givenName"] for p in self.people.people.values()), ["Анна", "Борис"])
+        self.assertIn("Семья", [group["name"] for group in self.people.groups.values()])
+        self.assertEqual(len(contacts.group_items(OWNER)), 1)
 
     def test_deletions_both_ways(self):
         one = contacts.create_contact(OWNER, {"first": "Анна"})

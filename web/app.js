@@ -705,6 +705,7 @@
         ]),
         el("div", { class: "who" }, [
           el("span", { title: state.me.email }, state.me.email),
+          el("button", { type: "button", class: "icon-button", onclick: () => showCalendar() }, t("menu.calendar")),
           el("button", { type: "button", class: "icon-button", onclick: () => showAccount() }, t("menu.account")),
           el("button", { type: "button", class: "icon-button", onclick: signOut }, t("menu.signOut")),
         ]),
@@ -2307,6 +2308,139 @@
           }, "−"),
         ]))) : el("p", { class: "muted" }, t("groups.empty")),
       ]),
+    ]));
+  }
+
+  // Calendar ------------------------------------------------------------------------
+  // Every birthday and date of the cards by month. The ones the calendars of
+  // Google and Apple show are "active"; the others are marked with why: the
+  // date is kept out of the calendars, or the card is hidden (itself or with
+  // a hidden group), so it is on no device at all.
+  const CALENDAR_FILTER_KEY = "contacts-calendar-filter";
+  const calendarView = { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
+  // The calendar is a window over the page; it is drawn again in place.
+  let calendarWindow = null;
+
+  function calendarEvents() {
+    const found = [];
+    state.contacts.forEach((contact) => {
+      const cardHidden = isHidden(contact);
+      const add = (value, label, kind, dateHidden) => {
+        const match = /^(\d{4}|-)-(\d{2})-(\d{2})$/.exec(value || "");
+        if (!match) return;
+        found.push({
+          contact, kind, label,
+          month: Number(match[2]), day: Number(match[3]), year: match[1] === "-" ? null : Number(match[1]),
+          hidden: dateHidden || cardHidden,
+          reason: dateHidden ? "date" : cardHidden ? "card" : "",
+        });
+      };
+      if (contact.birthday) add(contact.birthday, fieldName("birthday"), "birthday", false);
+      if (contact.hidden_birthday) add(contact.hidden_birthday, fieldName("birthday"), "birthday", true);
+      (contact.dates || []).forEach((entry) => add(entry.value, labelText(entry.label), "date", Boolean(entry.hidden)));
+    });
+    return found;
+  }
+
+  function showCalendar() {
+    if (!calendarWindow) {
+      calendarWindow = dialog("", () => { calendarWindow = null; });
+      calendarWindow.node.classList.add("calendar-dialog");
+    }
+    const filter = ["all", "active", "hidden"].includes(stored(CALENDAR_FILTER_KEY)) ? stored(CALENDAR_FILTER_KEY) : "all";
+    const { year, month } = calendarView;
+    const days = new Date(year, month, 0).getDate();
+    const leap = days === 29 && month === 2;
+    // The events of the month; 29 February falls on the 28th in other years.
+    const events = calendarEvents()
+      .filter((event) => event.month === month)
+      .map((event) => ({ ...event, shownDay: event.month === 2 && event.day === 29 && !leap ? 28 : event.day }))
+      .filter((event) => filter === "all" || (filter === "hidden") === event.hidden)
+      .sort((a, b) => a.shownDay - b.shownDay || Number(a.hidden) - Number(b.hidden) || sortKey(a.contact).localeCompare(sortKey(b.contact), language));
+    const byDay = new Map();
+    events.forEach((event) => byDay.set(event.shownDay, [...(byDay.get(event.shownDay) || []), event]));
+    const today = new Date();
+    const isToday = (day) => today.getFullYear() === year && today.getMonth() + 1 === month && today.getDate() === day;
+
+    const move = (step) => {
+      const date = new Date(year, month - 1 + step, 1);
+      calendarView.year = date.getFullYear();
+      calendarView.month = date.getMonth() + 1;
+      showCalendar();
+    };
+    const chip = (event) => {
+      const years = event.year && year >= event.year ? year - event.year : null;
+      const extra = years === null ? "" : event.kind === "birthday" ? t("calendar.turns", { count: years }) : t("calendar.years", { count: years });
+      return el("a", {
+        class: "cal-event" + (event.hidden ? " hidden-event" : "") + (event.kind === "birthday" ? " birthday" : ""),
+        href: "#/c/" + event.contact.id,
+        title: [displayName(event.contact), event.label, extra, event.hidden ? t("calendar.reason." + event.reason) : ""].filter(Boolean).join(" · "),
+        onclick: (click) => {
+          click.preventDefault();
+          calendarWindow.close();
+          go("#/c/" + event.contact.id);
+        },
+      }, [
+        el("span", { class: "cal-name" }, displayName(event.contact)),
+        el("span", { class: "cal-what" }, [event.label, extra].filter(Boolean).join(" · ")),
+        event.hidden ? el("span", { class: "cal-why" }, t("calendar.reason." + event.reason)) : null,
+      ]);
+    };
+
+    // The grid, weeks from Monday.
+    const first = (new Date(year, month - 1, 1).getDay() + 6) % 7;
+    const weekdays = Array.from({ length: 7 }, (_, index) => new Date(Date.UTC(2024, 0, 1 + index, 12)).toLocaleDateString(language, { weekday: "short", timeZone: "UTC" }));
+    const cells = [];
+    for (let index = 0; index < first; index += 1) cells.push(el("div", { class: "cal-cell empty" }));
+    for (let day = 1; day <= days; day += 1) {
+      cells.push(el("div", { class: "cal-cell" + (isToday(day) ? " today" : "") }, [
+        el("span", { class: "cal-day" }, String(day)),
+        el("div", { class: "cal-cell-events" }, (byDay.get(day) || []).map(chip)),
+      ]));
+    }
+    // Always six weeks, so that the window keeps its size from month to month.
+    while (cells.length < 42) cells.push(el("div", { class: "cal-cell empty" }));
+    // The same month as a list, for a phone.
+    const agenda = el("ol", { class: "cal-agenda" }, byDay.size ? Array.from(byDay.entries()).map(([day, items]) => el("li", { class: isToday(day) ? "today" : null }, [
+      el("span", { class: "cal-date" }, new Date(year, month - 1, day).toLocaleDateString(language, { day: "numeric", weekday: "short" })),
+      el("div", { class: "cal-items" }, items.map(chip)),
+    ])) : [el("li", { class: "muted small" }, t("calendar.none"))]);
+    const hiddenCount = events.filter((event) => event.hidden).length;
+
+    calendarWindow.title(((text) => text.charAt(0).toLocaleUpperCase(language) + text.slice(1))(new Date(year, month - 1, 1).toLocaleDateString(language, { month: "long", year: "numeric" })));
+    calendarWindow.fill(el("div", { class: "calendar" }, [
+      el("div", { class: "cal-head" }, [
+        el("div", { class: "actions start" }, [
+          el("button", { type: "button", class: "ghost", "aria-label": t("calendar.prev"), title: t("calendar.prev"), onclick: () => move(-1) }, "←"),
+          el("button", {
+            type: "button",
+            class: "ghost",
+            onclick: () => {
+              calendarView.year = today.getFullYear();
+              calendarView.month = today.getMonth() + 1;
+              showCalendar();
+            },
+          }, t("calendar.today")),
+          el("button", { type: "button", class: "ghost", "aria-label": t("calendar.next"), title: t("calendar.next"), onclick: () => move(1) }, "→"),
+        ]),
+        // The kinds of events, which are also the filter: a click shows only
+        // that kind, a second click all of them again.
+        el("div", { class: "cal-legend", role: "group", "aria-label": t("calendar.filter") }, ["active", "hidden"].map((kind) => el("button", {
+          type: "button",
+          class: "cal-event sample" + (kind === "hidden" ? " hidden-event" : "") + (filter === kind ? " on" : ""),
+          "aria-pressed": String(filter === kind),
+          title: t(filter === kind ? "calendar.showAll" : "calendar.only." + kind),
+          onclick: () => {
+            store(CALENDAR_FILTER_KEY, filter === kind ? "all" : kind);
+            showCalendar();
+          },
+        }, t("calendar." + kind)))),
+      ]),
+      el("p", { class: "muted small" }, [
+        events.length ? t("calendar.count", { count: events.length }) + (hiddenCount ? " · " + t("calendar.hiddenCount", { count: hiddenCount }) : "") : t("calendar.none"),
+      ]),
+      el("div", { class: "cal-grid", role: "grid" }, [...weekdays.map((name) => el("div", { class: "cal-weekday" }, name)), ...cells]),
+      agenda,
     ]));
   }
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.0
+
+### Added
+
+- A calendar beside Settings, in a window over the page: every birthday and date of the cards on a month grid (a list on a phone), with the age or the years since. The ones the calendars of Google and Apple show and the ones they do not are told apart, with why (the date is kept out of the calendars, or the card is hidden, itself or with its group). 29 February falls on the 28th in other years. The kinds of events above the grid are the filter: a click shows only that kind, a second click all of them again. The window keeps its size from month to month: six weeks of cells of one height, and the events of a busy day scroll inside their cell.
+
 ## v0.6.0
 
 ### Added

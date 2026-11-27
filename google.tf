@@ -25,7 +25,7 @@ resource "aws_lambda_function" "google" {
 
   function_name = local.google_function
   role          = aws_iam_role.lambda.arn
-  runtime       = "python3.14"
+  runtime       = local.python_runtime
   architectures = ["arm64"]
   handler       = "google_sync.handler"
   memory_size   = 512
@@ -37,6 +37,7 @@ resource "aws_lambda_function" "google" {
 
   environment {
     variables = {
+      PYTHON_LAZY_IMPORTS     = local.python_lazy_imports
       TABLE_NAME              = aws_dynamodb_table.main.name
       PHOTOS_BUCKET           = aws_s3_bucket.photos.id
       PHOTO_MAX_BYTES         = tostring(var.photo_max_bytes)

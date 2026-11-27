@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.8.2
+
+### Changed
+
+- The functions run on Python 3.15 with lazy imports (PEP 810, `PYTHON_LAZY_IMPORTS=all`): a module loads when it is first used, so a cold start skips what the request does not need, about a fifth less time to the first answer of the API.
+- The page asks Cognito for the language and the API for the account at the same time when it opens, instead of one after the other.
+
 ## v0.8.1
 
 ### Fixed

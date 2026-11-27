@@ -141,7 +141,7 @@ resource "aws_lambda_function" "reset" {
 
   function_name = "${local.name}-reset"
   role          = aws_iam_role.reset[0].arn
-  runtime       = "python3.14"
+  runtime       = local.python_runtime
   architectures = ["arm64"]
   handler       = "reset.handler"
   memory_size   = 256
@@ -152,6 +152,7 @@ resource "aws_lambda_function" "reset" {
 
   environment {
     variables = {
+      PYTHON_LAZY_IMPORTS     = local.python_lazy_imports
       TABLE_NAME              = aws_dynamodb_table.main.name
       PHOTOS_BUCKET           = aws_s3_bucket.photos.id
       USER_POOL_ID            = aws_cognito_user_pool.main.id

@@ -20,7 +20,7 @@ resource "aws_lambda_function" "backup" {
   #checkov:skip=CKV_AWS_272:Code signing is not used for this internal function.
   function_name = local.backup_function
   role          = aws_iam_role.lambda.arn
-  runtime       = "python3.14"
+  runtime       = local.python_runtime
   architectures = ["arm64"]
   handler       = "backup.handler"
   memory_size   = 1024
@@ -36,10 +36,11 @@ resource "aws_lambda_function" "backup" {
 
   environment {
     variables = {
-      TABLE_NAME    = aws_dynamodb_table.main.name
-      PHOTOS_BUCKET = aws_s3_bucket.photos.id
-      UID_DOMAIN    = local.site_host
-      DEMO          = tostring(var.demo)
+      PYTHON_LAZY_IMPORTS = local.python_lazy_imports
+      TABLE_NAME          = aws_dynamodb_table.main.name
+      PHOTOS_BUCKET       = aws_s3_bucket.photos.id
+      UID_DOMAIN          = local.site_host
+      DEMO                = tostring(var.demo)
     }
   }
 

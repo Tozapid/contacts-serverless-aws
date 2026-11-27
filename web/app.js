@@ -1124,8 +1124,6 @@
         el("button", { type: "button", class: "ghost", onclick: () => showGraph(contact.id) }, t("graph.open")),
         el("button", { type: "button", class: "ghost", onclick: () => exportCards([contact.id]) }, t("contact.export")),
         el("button", { type: "button", class: "ghost", onclick: toggleHidden }, t(contact.hidden ? "hidden.show" : "hidden.hide")),
-        // The print style (styles.css) leaves the card alone, with its photo.
-        el("button", { type: "button", class: "ghost", onclick: () => window.print() }, t("contact.print")),
         el("button", {
           type: "button",
           class: "danger",

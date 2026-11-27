@@ -4128,9 +4128,11 @@
     }
     try {
       await currentSession();
-      await loadLanguage();
-      // The answer also sets the cookie that opens the photos.
-      state.me = await api("/me");
+      // The language (from Cognito) and /me (the cookie that opens the
+      // photos) at once: different services, so neither waits for the other.
+      // The calls of the API stay one after another, as a warm function
+      // takes one at a time and a second at once would start a cold one.
+      [, state.me] = await Promise.all([loadLanguage(), api("/me")]);
       // The text about the app is for the page before the sign-in.
       const about = document.getElementById("about");
       if (about) about.remove();

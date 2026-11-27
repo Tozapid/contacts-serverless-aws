@@ -47,7 +47,7 @@ resource "aws_lambda_function" "api" {
   #checkov:skip=CKV_AWS_272:Code signing is not used for this internal function.
   function_name = "${local.name}-api"
   role          = aws_iam_role.lambda.arn
-  runtime       = "python3.14"
+  runtime       = local.python_runtime
   architectures = ["arm64"]
   handler       = "contacts.handler"
   memory_size   = 512
@@ -60,6 +60,7 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
+      PYTHON_LAZY_IMPORTS = local.python_lazy_imports
       # The demo only: what arm_reset needs to start the timer of the reset.
       RESET_SCHEDULE_NAME       = local.reset ? local.reset_schedule_name : ""
       RESET_DELAY_HOURS         = tostring(var.reset_delay_hours)

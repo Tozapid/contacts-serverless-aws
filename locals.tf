@@ -37,6 +37,12 @@ locals {
   # The SES identity of domain_name, unless the caller manages it.
   ses_identity = local.alerts && var.ses_identity
 
+  # Every function runs on one Python. Its imports are lazy (PEP 810): a
+  # module loads when first used, so a cold start skips the modules a
+  # request does not need.
+  python_runtime      = "python3.15"
+  python_lazy_imports = "all"
+
   # The version of this deployment: the newest entry of CHANGELOG.md.
   version = regex("(?m)^## (v[0-9]+\\.[0-9]+\\.[0-9]+)(?:\\s|$)", file("${path.module}/CHANGELOG.md"))[0]
 

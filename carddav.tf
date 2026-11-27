@@ -33,7 +33,7 @@ resource "aws_lambda_function" "dav" {
 
   function_name = "${local.name}-dav"
   role          = aws_iam_role.lambda.arn
-  runtime       = "python3.14"
+  runtime       = local.python_runtime
   architectures = ["arm64"]
   handler       = "carddav.handler"
   memory_size   = 512
@@ -44,11 +44,12 @@ resource "aws_lambda_function" "dav" {
 
   environment {
     variables = {
-      TABLE_NAME      = aws_dynamodb_table.main.name
-      PHOTOS_BUCKET   = aws_s3_bucket.photos.id
-      PHOTO_MAX_BYTES = tostring(var.photo_max_bytes)
-      USER_POOL_ID    = aws_cognito_user_pool.main.id
-      UID_DOMAIN      = local.site_host
+      PYTHON_LAZY_IMPORTS = local.python_lazy_imports
+      TABLE_NAME          = aws_dynamodb_table.main.name
+      PHOTOS_BUCKET       = aws_s3_bucket.photos.id
+      PHOTO_MAX_BYTES     = tostring(var.photo_max_bytes)
+      USER_POOL_ID        = aws_cognito_user_pool.main.id
+      UID_DOMAIN          = local.site_host
     }
   }
 

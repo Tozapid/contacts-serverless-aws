@@ -701,13 +701,13 @@
   const MOD = MAC ? "⌘" : "Ctrl";
   const SHORTCUTS = [
     [MOD + " ↩", "keys.save"],
-    [MOD + " K", "keys.search"],
+    [MOD + " K", "keys.quickSearch"],
     ["/", "keys.search"],
     ["N", "keys.new"],
     ["E", "keys.edit"],
     ["H", "keys.history"],
     ["C", "keys.calendar"],
-    ["Esc", "keys.close"],
+    ["Esc", "keys.back"],
     ["?", "keys.help"],
   ];
   let shortcutsOn = false;
@@ -743,8 +743,22 @@
     if (mod && event.key.toLowerCase() === "k") {
       if (windowOpen()) return;
       event.preventDefault();
-      listNode?.querySelector("input.search")?.focus();
-      if (window.matchMedia("(max-width: 760px)").matches && route().view !== "none") go("#");
+      showQuickSearch();
+      return;
+    }
+    // Esc leaves the editor as "Cancel" does, and closes a card (or what is
+    // open on the right) back to the list. A window closes by itself; a
+    // field that handles Esc itself (the search, a person picker) keeps it.
+    if (event.key === "Escape") {
+      if (windowOpen() || event.target.closest?.(".list-pane")) return;
+      const cancel = detailNode?.querySelector("form.editor .editor-cancel");
+      if (cancel) {
+        event.preventDefault();
+        cancel.click();
+      } else if (route().view !== "none") {
+        event.preventDefault();
+        go("#");
+      }
       return;
     }
     if (event.metaKey || event.ctrlKey || event.altKey || typing(event.target) || windowOpen()) return;
@@ -762,6 +776,70 @@
     if (!action) return;
     event.preventDefault();
     action();
+  }
+
+  // ⌘K: a search window over the page, the search of the list in it. The
+  // arrows choose a card, ↩ opens it; with nothing typed it offers the cards
+  // changed last.
+  const QUICK_MAX = 10;
+
+  function showQuickSearch() {
+    const view = dialog(t("keys.search"));
+    view.node.classList.add("quick-search");
+    let chosen = 0;
+    let found = [];
+    const list = el("ul", { class: "contacts quick-results", role: "listbox" });
+    const hint = el("p", { class: "muted small" });
+    const input = el("input", {
+      type: "search",
+      class: "search",
+      placeholder: t("search.placeholder"),
+      "aria-label": t("search.placeholder"),
+      autocomplete: "off",
+      oninput: () => {
+        chosen = 0;
+        draw();
+      },
+      onkeydown: (event) => {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          if (found.length) chosen = (chosen + (event.key === "ArrowDown" ? 1 : found.length - 1)) % found.length;
+          draw();
+        } else if (event.key === "Enter" && !event.isComposing) {
+          event.preventDefault();
+          if (found[chosen]) open(found[chosen]);
+        }
+      },
+    });
+    const open = (contact) => {
+      view.close();
+      go("#/c/" + contact.id);
+    };
+    function draw() {
+      const query = input.value.trim();
+      found = (query ? search(query) : Array.from(state.contacts.values()).sort(byModified)).slice(0, QUICK_MAX);
+      hint.textContent = query ? "" : t("keys.recent");
+      fill(list, found.length ? found.map((contact, index) => {
+        const row = contactRow(contact, index === chosen);
+        const link = row.firstChild;
+        link.setAttribute("role", "option");
+        link.setAttribute("aria-selected", String(index === chosen));
+        link.onclick = (event) => {
+          event.preventDefault();
+          open(contact);
+        };
+        link.onmousemove = () => {
+          if (chosen === index) return;
+          chosen = index;
+          draw();
+        };
+        return row;
+      }) : [el("li", { class: "muted small" }, t("search.none"))]);
+      list.querySelector(".active")?.scrollIntoView({ block: "nearest" });
+    }
+    view.fill([input, hint, list]);
+    draw();
+    input.focus();
   }
 
   function render() {
@@ -812,6 +890,8 @@
           if (first) go("#/c/" + first.id);
         }
         if (event.key === "Escape" && state.query) {
+          // Handled here: the shortcuts leave the open card alone.
+          event.preventDefault();
           state.query = "";
           scheduleHistorySearch();
           renderList();
@@ -1757,10 +1837,7 @@
     shownExtra.add("birthday");
     shownExtra.add("notes");
     const error = el("p", { class: "error", role: "alert" });
-    const save = el("button", { class: "primary", type: "submit", title: MOD + " ↩" }, [
-      t(contact ? "editor.save" : "editor.create"),
-      el("kbd", { class: "key-hint", "aria-hidden": "true" }, MOD + "↩"),
-    ]);
+    const save = el("button", { class: "primary", type: "submit" }, t(contact ? "editor.save" : "editor.create"));
     const saver = draftSaver(key, draft, etag);
     const markDirty = () => saver.schedule();
     const discard = async () => {
@@ -2032,7 +2109,8 @@
         error,
         el("button", {
           type: "button",
-          class: "ghost",
+          // Esc presses it too (onShortcut).
+          class: "ghost editor-cancel",
           onclick: async () => {
             if (await discard()) go(contact ? "#/c/" + contact.id : "#");
           },
@@ -2189,7 +2267,10 @@
       onfocus: () => suggest(),
       onblur: () => setTimeout(() => list.classList.add("hidden"), 150),
       onkeydown: (event) => {
-        if (event.key === "Escape") list.classList.add("hidden");
+        if (event.key === "Escape" && !list.classList.contains("hidden")) {
+          event.preventDefault();
+          list.classList.add("hidden");
+        }
         if (event.key === "Enter" && !list.classList.contains("hidden")) {
           event.preventDefault();
           list.querySelector("button")?.dispatchEvent(new MouseEvent("mousedown"));

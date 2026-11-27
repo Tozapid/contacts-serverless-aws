@@ -4,7 +4,7 @@
 
 ### Added
 
-- Keyboard shortcuts: ⌘↩ (Ctrl+Enter on Windows and Linux) saves the card being edited, also while typing in a field, and "Save" shows it; ⌘K or / goes to the search, N makes a new contact, E edits the open card, H opens its history, C the calendar, Esc closes a window, and ? lists them all (also in the ⋯ menu). The single keys work when nothing is being typed and no window is open.
+- Keyboard shortcuts: ⌘↩ (Ctrl+Enter on Windows and Linux) saves the card being edited, also while typing in a field; ⌘K opens a search window over the page (the arrows choose a card, ↩ opens it, and with nothing typed it offers the cards changed last); / goes to the search of the list, N makes a new contact, E edits the open card, H opens its history, C the calendar; Esc leaves the editor as "Cancel" does and closes a card back to the list; and ? lists them all (also in the ⋯ menu). The single keys work when nothing is being typed and no window is open.
 
 ### Changed
 

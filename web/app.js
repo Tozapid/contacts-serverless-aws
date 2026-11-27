@@ -1396,15 +1396,27 @@
     levels.forEach((gen) => {
       const units = [];
       const placed = new Set();
+      const spousesOf = (node) => rows.get(gen).filter((other) => other !== node && kinds(node, other) === "spouse");
       rows.get(gen).forEach((node) => {
         if (placed.has(node)) return;
-        const unit = [node];
+        // Everyone joined by marriage, one after another.
+        const group = [node];
         placed.add(node);
-        rows.get(gen).forEach((other) => {
-          if (!placed.has(other) && kinds(node, other) === "spouse" && unit.length < 3) {
-            unit.push(other);
-            placed.add(other);
-          }
+        for (let index = 0; index < group.length; index += 1) {
+          spousesOf(group[index]).forEach((other) => {
+            if (!placed.has(other)) {
+              placed.add(other);
+              group.push(other);
+            }
+          });
+        }
+        // The one with the most spouses in the middle, the spouses either
+        // side of them, so that as many couples as can stand side by side.
+        const hub = group.reduce((best, other) => (spousesOf(other).length > spousesOf(best).length ? other : best), group[0]);
+        const unit = [hub];
+        group.filter((other) => other !== hub).forEach((other, index) => {
+          if (index % 2) unit.unshift(other);
+          else unit.push(other);
         });
         units.push(unit);
       });
@@ -1497,7 +1509,9 @@
       edgesLayer.append(path);
       shapes.push(() => {
         const px = parents.reduce((sum, node) => sum + pos.get(node).x, 0) / parents.length;
-        const py = parents.reduce((sum, node) => sum + pos.get(node).y, 0) / parents.length + (parents.length > 1 ? 0 : radius);
+        // From the middle of a couple's double line, or from under the name
+        // of a single parent.
+        const py = parents.reduce((sum, node) => sum + pos.get(node).y, 0) / parents.length + (parents.length > 1 ? 0 : labelDepth(parents[0]));
         const tops = children.map((child) => pos.get(child));
         const busY = Math.min(...tops.map((point) => point.y)) - radius - 26;
         const xs = tops.map((point) => point.x);
@@ -1530,6 +1544,14 @@
         const b = pos.get(link.to);
         const [left, right] = a.x <= b.x ? [a, b] : [b, a];
         const level = Math.abs(a.y - b.y) < 1;
+        const between = level && [...pos.entries()].some(([node, point]) => node !== link.from && node !== link.to
+          && Math.abs(point.y - a.y) < 1 && point.x > left.x && point.x < right.x);
+        if (style === "couple" && between) {
+          // A couple with somebody between them: a double arc over the row.
+          const lift = a.y - radius - 30 - Math.min(50, (right.x - left.x) / 10);
+          path.setAttribute("d", [0, 6].map((up) => `M${left.x} ${left.y - radius - up / 2} Q${(left.x + right.x) / 2} ${lift - up} ${right.x} ${right.y - radius - up / 2}`).join(" "));
+          return;
+        }
         if (style === "couple") {
           // A couple: a double line between the two, at any angle.
           const dx = b.x - a.x;
@@ -1612,6 +1634,9 @@
     };
     const short = (text, max) => (text.length > max ? text.slice(0, max - 1) + "…" : text);
     const groups = [];
+    function labelDepth(node) {
+      return radius + (node !== id && roleOf(node) ? 42 : 26);
+    }
     const draw = () => {
       shapes.forEach((shape) => shape());
       groups.forEach(({ node, group }) => group.setAttribute("transform", `translate(${pos.get(node).x} ${pos.get(node).y})`));

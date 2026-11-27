@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.8.1
+
+### Fixed
+
+- The family graph no longer draws lines across people and names: the line from a single parent to a child starts under the parent's name, a person with several spouses stands in the middle with the spouses either side, and a couple with somebody between them is joined by a double arc over the row instead of a line through the people between.
+
 ## v0.8.0
 
 ### Added

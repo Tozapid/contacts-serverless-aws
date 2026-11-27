@@ -1085,23 +1085,6 @@
       },
     }, contact.starred ? "★" : "☆");
 
-    // Hidden: the card stays here only; the syncs take it off Google, iCloud
-    // and the devices, and bring it back when it is shown again.
-    const toggleHidden = async (event) => {
-      if (!contact.hidden && !window.confirm(t("hidden.confirm", { name: displayName(contact) }))) return;
-      event.target.disabled = true;
-      try {
-        const saved = await api("/contacts/" + contact.id, { method: "PUT", body: { ...contact, hidden: !contact.hidden } });
-        state.contacts.set(saved.id, saved);
-        toast(t(saved.hidden ? "hidden.done" : "hidden.undone"));
-      } catch (error) {
-        toast(error.message);
-        if (error.code === "changed") await reload();
-      }
-      renderList();
-      renderDetail();
-    };
-
     fill(detailNode, el("article", { class: "card contact-card" }, [
       backButton(),
       el("header", { class: "card-head" }, [
@@ -1123,24 +1106,6 @@
         el("button", { type: "button", class: "ghost", onclick: () => go(`#/c/${contact.id}/history`) }, t("contact.history")),
         el("button", { type: "button", class: "ghost", onclick: () => showGraph(contact.id) }, t("graph.open")),
         el("button", { type: "button", class: "ghost", onclick: () => exportCards([contact.id]) }, t("contact.export")),
-        el("button", { type: "button", class: "ghost", onclick: toggleHidden }, t(contact.hidden ? "hidden.show" : "hidden.hide")),
-        el("button", {
-          type: "button",
-          class: "danger",
-          onclick: async () => {
-            if (!window.confirm(t("contact.deleteConfirm", { name: displayName(contact) }))) return;
-            try {
-              await api(`/contacts/${contact.id}?etag=${contact.etag}`, { method: "DELETE" });
-              state.contacts.delete(contact.id);
-              toast(t("contact.deleted"));
-              go("#");
-              renderList();
-            } catch (error) {
-              toast(error.message);
-              if (error.code === "changed") await reload();
-            }
-          },
-        }, t("contact.delete")),
       ]),
       ...(sections.length ? sections : [el("p", { class: "muted" }, t("contact.emptyCard"))]),
       el("p", { class: "muted small stamps" }, t("contact.stamps", { created: when(contact.created), modified: when(contact.modified) })),
@@ -1656,6 +1621,30 @@
         el("p", { class: "muted small" }, t("hidden.fieldHint")),
       ]),
       el("div", { class: "actions sticky-actions" }, [
+        // Deleting is a step of editing: the card goes to the trash.
+        contact ? el("button", {
+          type: "button",
+          class: "danger",
+          onclick: async (event) => {
+            if (!window.confirm(t("contact.deleteConfirm", { name: displayName(contact) }))) return;
+            event.target.disabled = true;
+            // The delete removes the draft; a draft sent after it would bring it back.
+            await saver.stop();
+            try {
+              await api(`/contacts/${contact.id}?etag=${contact.etag}`, { method: "DELETE" });
+              state.contacts.delete(contact.id);
+              state.drafts.delete(key);
+              toast(t("contact.deleted"));
+              go("#");
+              renderList();
+            } catch (failure) {
+              toast(failure.message);
+              event.target.disabled = false;
+              saver.resume();
+              if (failure.code === "changed") await reload();
+            }
+          },
+        }, t("contact.delete")) : null,
         error,
         el("button", {
           type: "button",

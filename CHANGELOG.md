@@ -5,7 +5,7 @@
 ### Added
 
 - Any date of a card, not only the birthday, can be kept out of the calendars: a switch by the date sends it to the devices and iCloud as a plain date labelled "Anniversary (not in calendar) - managed by …" (or the label of the date), and to Google as a custom field instead of an event, since the birthdays calendar of Google shows the events of a contact too. It comes back from all of them as the same date with the switch on (`dates[].hidden`), and a device that drops it does not erase it.
-- Hidden cards (`hidden`): a card marked hidden stays in the address book with its history, and the sync deletes it from Google, iCloud and the CardDAV devices (the sync log says "hidden here"); with the mark off, it goes to them again as a new card. The card and its editor have the switch, the list marks such cards and has a filter "Hidden". A vCard import keeps the mark.
+- Hidden cards (`hidden`): a card marked hidden stays in the address book with its history, and the sync deletes it from Google, iCloud and the CardDAV devices (the sync log says "hidden here"); with the mark off, it goes to them again as a new card. The editor has the switch, the card and the list mark such cards and has a filter "Hidden". A vCard import keeps the mark.
 - The trash in Settings → Trash: the deleted cards with their fields as they were deleted, searched across every field with the rules of the list, restored with one click or deleted for good. The trash entry of a card (`DELETED#`) now keeps the card and the version to restore; an entry of an earlier version gets them from the newest version of its card the first time the trash is listed.
 - The list sorts by the last change too, newest first, with the time of the change on each row.
 - A print style: an open card prints alone, with its photo and every field it has, without the buttons, the list and the bar on top; with no card open the list prints. The print is light in the dark scheme too.
@@ -15,6 +15,7 @@
 
 - The editor shows the fields an address book usually has: name, company and title, phones, emails, addresses, birthday and notes. Websites, dates, related people, messengers, social profiles and custom fields show once they have a value or are added with "Add field". The editor learns from the book: a field of "Add field" that is filled in at least a fifth of the 100 cards changed last (and in three at least), such as "File as", is there at once.
 - "Deleted" in the menu of the list became the trash in Settings; `#/deleted` opens it.
+- A card is deleted from its editor: the card shows only what it holds and the ways to look at it (history, family graph, vCard), and "Delete" is beside "Cancel" and "Save".
 
 ## v0.5.0
 
